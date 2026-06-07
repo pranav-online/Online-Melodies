@@ -408,7 +408,7 @@ function Player({
         </button>
 
         {/* Volume HUD */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '6px' }}>
+        <div className="volume-hud" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '6px' }}>
           <button onClick={toggleMute} className="btn-icon" style={{ padding: '6px' }} title={isMuted ? 'Unmute' : 'Mute'}>
             {isMuted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
           </button>

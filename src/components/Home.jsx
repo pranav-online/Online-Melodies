@@ -103,7 +103,7 @@ function Home({
     <div style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: '40px' }}>
       
       {/* Header Panel */}
-      <header style={{
+      <header className="home-header" style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',

@@ -88,6 +88,7 @@ body {
   color: var(--text-primary);
   overflow: hidden;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
   -webkit-font-smoothing: antialiased;
 }
@@ -115,6 +116,7 @@ body {
   grid-template-columns: 280px 1fr;
   grid-template-rows: 1fr auto;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
   background-color: var(--bg-base);
   z-index: 1;
@@ -474,8 +476,8 @@ input[type="range"]:hover::-webkit-slider-thumb {
     display: flex !important;
     flex-direction: column !important;
     height: auto !important;
-    padding: 16px !important;
-    gap: 16px !important;
+    padding: 8px 12px !important;
+    gap: 8px !important;
   }
 
   /* Footer sections ordering & sizing */
@@ -483,12 +485,13 @@ input[type="range"]:hover::-webkit-slider-thumb {
     width: 100% !important;
     justify-content: space-between !important;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    padding-bottom: 12px;
+    padding-bottom: 8px;
   }
 
   .app-player-footer > div:nth-child(2) { /* Controls & Seekbar */
     width: 100% !important;
     order: 3;
+    gap: 4px !important;
   }
 
   .app-player-footer > div:nth-child(3) { /* Sub-controls */
@@ -497,6 +500,37 @@ input[type="range"]:hover::-webkit-slider-thumb {
     flex-wrap: wrap !important;
     gap: 12px !important;
     order: 2;
+  }
+
+  /* Volume HUD */
+  .volume-hud {
+    display: none !important;
+  }
+
+  /* Home Greeting Card */
+  .home-header {
+    flex-direction: column !important;
+    align-items: center !important;
+    text-align: center !important;
+    gap: 16px !important;
+    padding: 20px 16px !important;
+  }
+
+  .home-header > div:nth-child(2) {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    gap: 10px !important;
+  }
+
+  .home-header > div:nth-child(2) button {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  /* Glass Card padding reduction on mobile */
+  .glass-card {
+    padding: 12px !important;
   }
 
   /* Grid details for vertical banners */
