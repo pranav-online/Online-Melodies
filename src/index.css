@@ -1,0 +1,521 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+
+/* Dynamic Vibe Variables */
+:root {
+  --font-primary: 'Outfit', sans-serif;
+  --font-secondary: 'Plus Jakarta Sans', sans-serif;
+  
+  --bg-base: #07080e;
+  --bg-surface: rgba(13, 14, 24, 0.5);
+  --bg-surface-hover: rgba(255, 255, 255, 0.08);
+  --border-light: rgba(255, 255, 255, 0.06);
+  --border-glow: rgba(255, 255, 255, 0.1);
+  
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  
+  /* Defaults overridden by active vibes */
+  --vibe-accent: #1db954;
+  --vibe-accent-hover: #1ed760;
+  --vibe-glow-1: rgba(29, 185, 84, 0.15);
+  --vibe-glow-2: rgba(59, 130, 246, 0.15);
+  --vibe-speed: 20s;
+  --vibe-glow-pos-x: 20%;
+  --vibe-glow-pos-y: 10%;
+}
+
+/* Vibe Themes definition */
+.vibe-classic {
+  --vibe-accent: #1db954;
+  --vibe-accent-hover: #1ed760;
+  --vibe-glow-1: rgba(29, 185, 84, 0.2);
+  --vibe-glow-2: rgba(16, 185, 129, 0.15);
+  --vibe-speed: 25s;
+}
+
+.vibe-neon {
+  --vibe-accent: #f43f5e;
+  --vibe-accent-hover: #fb7185;
+  --vibe-glow-1: rgba(244, 63, 94, 0.25);
+  --vibe-glow-2: rgba(168, 85, 247, 0.25);
+  --vibe-speed: 10s;
+}
+
+.vibe-chill {
+  --vibe-accent: #8b5cf6;
+  --vibe-accent-hover: #a78bfa;
+  --vibe-glow-1: rgba(139, 92, 246, 0.25);
+  --vibe-glow-2: rgba(59, 130, 246, 0.2);
+  --vibe-speed: 30s;
+}
+
+.vibe-gold {
+  --vibe-accent: #d97706;
+  --vibe-accent-hover: #f59e0b;
+  --vibe-glow-1: rgba(217, 119, 6, 0.2);
+  --vibe-glow-2: rgba(239, 68, 68, 0.15);
+  --vibe-speed: 22s;
+}
+
+.vibe-ocean {
+  --vibe-accent: #06b6d4;
+  --vibe-accent-hover: #22d3ee;
+  --vibe-glow-1: rgba(6, 182, 212, 0.25);
+  --vibe-glow-2: rgba(16, 185, 129, 0.18);
+  --vibe-speed: 18s;
+}
+
+.vibe-crimson {
+  --vibe-accent: #ef4444;
+  --vibe-accent-hover: #f87171;
+  --vibe-glow-1: rgba(239, 68, 68, 0.22);
+  --vibe-glow-2: rgba(127, 29, 29, 0.2);
+  --vibe-speed: 12s;
+}
+
+/* Global Reset & Base */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+}
+
+body {
+  font-family: var(--font-primary);
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar Customization */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Layout Utilities */
+.app-container {
+  position: relative;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  grid-template-rows: 1fr auto;
+  height: 100vh;
+  width: 100vw;
+  background-color: var(--bg-base);
+  z-index: 1;
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .app-container {
+    grid-template-columns: 80px 1fr;
+  }
+}
+
+/* Background Glow Spheres */
+.glow-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.glow-sphere {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(140px);
+  opacity: 0.65;
+  mix-blend-mode: screen;
+  transition: all 1.5s ease-in-out;
+}
+
+.glow-sphere-1 {
+  width: 50vw;
+  height: 50vw;
+  top: -10%;
+  left: -10%;
+  background: radial-gradient(circle, var(--vibe-glow-1) 0%, rgba(0,0,0,0) 70%);
+  animation: pulseGlow1 var(--vibe-speed) infinite alternate ease-in-out;
+}
+
+.glow-sphere-2 {
+  width: 45vw;
+  height: 45vw;
+  bottom: -10%;
+  right: -10%;
+  background: radial-gradient(circle, var(--vibe-glow-2) 0%, rgba(0,0,0,0) 70%);
+  animation: pulseGlow2 var(--vibe-speed) infinite alternate ease-in-out;
+}
+
+@keyframes pulseGlow1 {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translate(5%, 10%) scale(1.1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translate(-5%, -5%) scale(0.9);
+    opacity: 0.4;
+  }
+}
+
+@keyframes pulseGlow2 {
+  0% {
+    transform: translate(0, 0) scale(0.9);
+    opacity: 0.4;
+  }
+  50% {
+    transform: translate(-10%, -5%) scale(1.15);
+    opacity: 0.65;
+  }
+  100% {
+    transform: translate(5%, 8%) scale(1);
+    opacity: 0.5;
+  }
+}
+
+/* Glassmorphism Styles */
+.glass-panel {
+  background: var(--bg-surface);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  border: 1px solid var(--border-light);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-panel:hover {
+  border-color: var(--border-glow);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--vibe-accent);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px -10px var(--vibe-glow-1);
+}
+
+.song-card-horizontal {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 16px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.song-card-horizontal:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--vibe-accent);
+  box-shadow: 0 8px 24px -8px var(--vibe-glow-1);
+  transform: translateY(-2px);
+}
+
+.song-list-item-row {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.015);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 6px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.song-list-item-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--vibe-accent);
+  box-shadow: 0 4px 12px -4px var(--vibe-glow-1);
+}
+
+/* Custom UI Items */
+.main-view {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  position: relative;
+  z-index: 2;
+  border-bottom: 1px solid var(--border-light);
+}
+
+@media (max-width: 768px) {
+  .main-view {
+    grid-column: 2;
+  }
+}
+
+/* Sliders / Inputs */
+input[type="range"] {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+input[type="range"]:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--vibe-accent);
+  box-shadow: 0 0 8px var(--vibe-accent);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+input[type="range"]:hover::-webkit-slider-thumb {
+  opacity: 1;
+  transform: scale(1.2);
+}
+
+/* Button & Action styling */
+.btn-icon {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  padding: 8px;
+  transition: all 0.2s;
+}
+
+.btn-icon:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+  transform: scale(1.05);
+}
+
+.btn-icon.active {
+  color: var(--vibe-accent);
+  filter: drop-shadow(0 0 6px var(--vibe-accent));
+}
+
+.btn-primary {
+  background: var(--vibe-accent);
+  color: #000;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-family: var(--font-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 14px var(--vibe-glow-1);
+}
+
+.btn-primary:hover {
+  background: var(--vibe-accent-hover);
+  transform: scale(1.03);
+  box-shadow: 0 6px 20px var(--vibe-glow-1);
+}
+
+/* Rotating Album Art Animation */
+.spinning-vinyl {
+  animation: spin 16s linear infinite;
+}
+
+.spinning-vinyl.paused {
+  animation-play-state: paused;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Flex Grid layouts */
+.grid-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 20px;
+  padding: 24px;
+}
+
+/* Text overlays */
+.text-gradient {
+  background: linear-gradient(135deg, #ffffff 0%, var(--vibe-accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Sidebar layout class */
+.app-sidebar {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 16px;
+  border-right: 1px solid var(--border-light);
+  height: 100%;
+  z-index: 10;
+  overflow-y: auto;
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Player footer class */
+.app-player-footer {
+  grid-column: 1 / span 2;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: 300px 1fr 300px;
+  align-items: center;
+  padding: 0 24px;
+  border-top: 1px solid var(--border-light);
+  height: 100px;
+  z-index: 100;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.mobile-only-close {
+  display: none !important;
+}
+
+/* Mobile responsive rules */
+.mobile-header {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .app-container {
+    grid-template-columns: 1fr !important;
+  }
+  
+  .main-view {
+    grid-column: 1 !important;
+  }
+
+  .mobile-header {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: rgba(7, 8, 14, 0.95);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border-bottom: 1px solid var(--border-light);
+    position: sticky;
+    top: 0;
+    z-index: 900;
+  }
+
+  .app-sidebar {
+    position: fixed !important;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 280px !important;
+    transform: translateX(-100%);
+    z-index: 1000 !important;
+    background: #0d0e18 !important;
+    box-shadow: 10px 0 40px rgba(0, 0, 0, 0.8) !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.12) !important;
+  }
+
+  .app-sidebar.open {
+    transform: translateX(0) !important;
+  }
+
+  .mobile-only-close {
+    display: flex !important;
+  }
+
+  .app-player-footer {
+    display: flex !important;
+    flex-direction: column !important;
+    height: auto !important;
+    padding: 16px !important;
+    gap: 16px !important;
+  }
+
+  /* Footer sections ordering & sizing */
+  .app-player-footer > div:nth-child(1) { /* Song Info */
+    width: 100% !important;
+    justify-content: space-between !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding-bottom: 12px;
+  }
+
+  .app-player-footer > div:nth-child(2) { /* Controls & Seekbar */
+    width: 100% !important;
+    order: 3;
+  }
+
+  .app-player-footer > div:nth-child(3) { /* Sub-controls */
+    width: 100% !important;
+    justify-content: center !important;
+    flex-wrap: wrap !important;
+    gap: 12px !important;
+    order: 2;
+  }
+
+  /* Grid details for vertical banners */
+  .playlist-header-banner {
+    flex-direction: column !important;
+    align-items: center !important;
+    text-align: center !important;
+    padding: 24px 16px !important;
+    gap: 16px !important;
+  }
+
+  .playlist-header-banner h1 {
+    font-size: 30px !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .hide-on-mobile {
+    display: none !important;
+  }
+}
+
