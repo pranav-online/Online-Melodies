@@ -168,14 +168,18 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date() });
 });
 
-// Serve static assets from the Vite build directory
-app.use(express.static(path.join(__dirname, 'dist')));
+// Serve static assets from the Vite build directory (only when running locally as a standalone server)
+if (!process.env.VERCEL) {
+  app.use(express.static(path.join(__dirname, '../dist')));
 
-// Fallback all other GET requests to SPA index.html
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-});
+  // Fallback all other GET requests to SPA index.html
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../dist', 'index.html'));
+  });
 
-app.listen(PORT, () => {
-  console.log(`Online-Melodies server is running on http://localhost:${PORT}`);
-});
+  app.listen(PORT, () => {
+    console.log(`Online-Melodies server is running on http://localhost:${PORT}`);
+  });
+}
+
+export default app;
