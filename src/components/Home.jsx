@@ -100,7 +100,7 @@ function Home({
   };
 
   return (
-    <div style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: '40px' }}>
+    <div className="page-container" style={{ gap: '40px' }}>
       
       {/* Header Panel */}
       <header className="home-header" style={{

@@ -547,9 +547,52 @@ input[type="range"]:hover::-webkit-slider-thumb {
   }
 }
 
+.page-container {
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  position: relative;
+}
+
+.playlist-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 24px 32px 12px 32px;
+}
+
+.playlist-tracks-container {
+  padding: 0 32px 32px 32px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.show-on-mobile {
+  display: none !important;
+}
+
 @media (max-width: 600px) {
   .hide-on-mobile {
     display: none !important;
+  }
+  
+  .show-on-mobile {
+    display: inline !important;
+  }
+
+  .page-container {
+    padding: 16px !important;
+    gap: 16px !important;
+  }
+
+  .playlist-actions {
+    padding: 16px 16px 8px 16px !important;
+    gap: 12px !important;
+  }
+
+  .playlist-tracks-container {
+    padding: 0 16px 16px 16px !important;
   }
 }
 

@@ -122,7 +122,7 @@ function Search({ playSong, likedSongs, toggleLikeSong, playlists, addSongToPlay
   };
 
   return (
-    <div style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: '28px', position: 'relative' }}>
+    <div className="page-container">
       
       {/* Search Header */}
       <div>
@@ -288,7 +288,7 @@ function Search({ playSong, likedSongs, toggleLikeSong, playlists, addSongToPlay
                     onClick={() => playSong(song, results)}
                   >
                     {/* Index */}
-                    <span style={{ width: '30px', color: 'var(--text-muted)', fontSize: '14px', fontWeight: '500' }}>
+                    <span className="hide-on-mobile" style={{ width: '30px', color: 'var(--text-muted)', fontSize: '14px', fontWeight: '500' }}>
                       {idx + 1}
                     </span>
 
@@ -314,7 +314,7 @@ function Search({ playSong, likedSongs, toggleLikeSong, playlists, addSongToPlay
                           {song.title}
                         </span>
                         <span style={{ fontSize: '12px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {song.channelName}
+                          {song.channelName} <span className="show-on-mobile">• {song.duration}</span>
                         </span>
                       </div>
                     </div>
@@ -325,7 +325,7 @@ function Search({ playSong, likedSongs, toggleLikeSong, playlists, addSongToPlay
                     </span>
 
                     {/* Duration */}
-                    <span style={{ width: '60px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'right', marginRight: '16px' }}>
+                    <span className="hide-on-mobile" style={{ width: '60px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'right', marginRight: '16px' }}>
                       {song.duration}
                     </span>
 

@@ -114,7 +114,7 @@ function Playlists({
       </div>
 
       {/* Playlist Actions (Play and Delete) */}
-      <div style={{ padding: '24px 32px 12px 32px', display: 'flex', alignItems: 'center', gap: '20px' }}>
+      <div className="playlist-actions">
         <button
           onClick={handlePlayAll}
           disabled={!hasSongs}
@@ -148,7 +148,7 @@ function Playlists({
       </div>
 
       {/* Tracks Listing */}
-      <div style={{ padding: '0 32px 32px 32px', flex: 1, overflowY: 'auto' }}>
+      <div className="playlist-tracks-container">
         {hasSongs ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '16px' }}>
             {/* Headers row */}
@@ -163,9 +163,9 @@ function Playlists({
               borderBottom: '1px solid rgba(255,255,255,0.05)',
               marginBottom: '8px'
             }}>
-              <span style={{ width: '30px' }}>#</span>
+              <span className="hide-on-mobile" style={{ width: '30px' }}>#</span>
               <span style={{ flex: 1 }}>Title</span>
-              <span style={{ width: '60px', textAlign: 'right', marginRight: '52px' }}>
+              <span className="hide-on-mobile" style={{ width: '60px', textAlign: 'right', marginRight: '52px' }}>
                 <Clock size={14} style={{ display: 'inline', transform: 'translateY(2px)' }} />
               </span>
             </div>
@@ -179,7 +179,7 @@ function Playlists({
                   className="song-list-item-row"
                   onClick={() => playSong(song, playlist.songs)}
                 >
-                  <span style={{ width: '30px', color: 'var(--text-muted)', fontSize: '14px', fontWeight: '500' }}>
+                  <span className="hide-on-mobile" style={{ width: '30px', color: 'var(--text-muted)', fontSize: '14px', fontWeight: '500' }}>
                     {index + 1}
                   </span>
 
@@ -203,13 +203,13 @@ function Playlists({
                         {song.title}
                       </span>
                       <span style={{ fontSize: '12px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {song.channelName}
+                        {song.channelName} <span className="show-on-mobile">• {song.duration}</span>
                       </span>
                     </div>
                   </div>
 
                   {/* Duration */}
-                  <span style={{ width: '60px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'right', marginRight: '16px' }}>
+                  <span className="hide-on-mobile" style={{ width: '60px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'right', marginRight: '16px' }}>
                     {song.duration}
                   </span>
 

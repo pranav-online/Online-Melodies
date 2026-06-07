@@ -85,7 +85,7 @@ function Queue({
   };
 
   return (
-    <div style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: '24px', height: '100%', overflowY: 'auto' }}>
+    <div className="page-container" style={{ height: '100%', overflowY: 'auto' }}>
       
       {/* Header and Clear action */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -142,10 +142,10 @@ function Queue({
                 {currentTrack.title}
               </span>
               <span style={{ fontSize: '13px', color: 'var(--vibe-accent)', fontWeight: '600', marginTop: '2px' }}>
-                {currentTrack.channelName}
+                {currentTrack.channelName} <span className="show-on-mobile" style={{ color: 'var(--text-secondary)', fontWeight: 'normal' }}>• {currentTrack.duration}</span>
               </span>
             </div>
-            <span style={{ fontSize: '14px', color: 'var(--text-muted)', paddingRight: '8px' }}>
+            <span className="hide-on-mobile" style={{ fontSize: '14px', color: 'var(--text-muted)', paddingRight: '8px' }}>
               {currentTrack.duration}
             </span>
           </div>
@@ -181,7 +181,7 @@ function Queue({
                   onClick={() => playSong(song, queue)}
                 >
                   {/* index label */}
-                  <span style={{ width: '24px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                  <span className="hide-on-mobile" style={{ width: '24px', color: 'var(--text-muted)', fontSize: '13px' }}>
                     {idx + 1}
                   </span>
 
@@ -205,13 +205,13 @@ function Queue({
                         {song.title}
                       </span>
                       <span style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {song.channelName}
+                        {song.channelName} <span className="show-on-mobile">• {song.duration}</span>
                       </span>
                     </div>
                   </div>
 
                   {/* Duration */}
-                  <span style={{ width: '50px', color: 'var(--text-muted)', fontSize: '12.5px', textAlign: 'right', marginRight: '16px' }}>
+                  <span className="hide-on-mobile" style={{ width: '50px', color: 'var(--text-muted)', fontSize: '12.5px', textAlign: 'right', marginRight: '16px' }}>
                     {song.duration}
                   </span>
 
