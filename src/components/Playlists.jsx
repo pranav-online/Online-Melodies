@@ -214,168 +214,188 @@ function Playlists({
                   </span>
 
                   {/* Controls */}
-                  <div className="song-dropdown-container" style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={e => e.stopPropagation()}>
+                    {/* Direct Delete/Unlike Button */}
                     <button
-                      onClick={() => setActiveSongMenuId(activeSongMenuId === song.id ? null : song.id)}
+                      onClick={(e) => {
+                        if (isLikedFolder) {
+                          toggleLikeSong(song, e);
+                        } else {
+                          removeSongFromPlaylist(playlist.id, song.id);
+                        }
+                      }}
                       className="btn-icon"
-                      style={{ padding: '6px' }}
-                      title="Options"
+                      style={{ padding: '6px', color: 'var(--text-muted)', transition: 'color 0.2s' }}
+                      onMouseOver={(e) => e.currentTarget.style.color = '#ef4444'}
+                      onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                      title={isLikedFolder ? "Remove from Liked" : "Remove from Playlist"}
                     >
-                      <MoreHorizontal size={16} />
+                      <Trash2 size={16} />
                     </button>
-                    
-                    {activeSongMenuId === song.id && (
-                      <div style={{
-                        position: 'absolute',
-                        top: '32px',
-                        right: '0',
-                        borderRadius: '12px',
-                        padding: '6px',
-                        minWidth: '180px',
-                        boxShadow: '0 10px 30px rgba(0,0,0,0.8)',
-                        zIndex: 1000,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '2px',
-                        backgroundColor: '#12131a',
-                        border: '1px solid rgba(255,255,255,0.15)'
-                      }}>
-                        {/* 1. Toggle Like */}
-                        <button
-                          onClick={(e) => {
-                            toggleLikeSong(song, e);
-                            setActiveSongMenuId(null);
-                          }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            width: '100%',
-                            background: 'transparent',
-                            border: 'none',
-                            borderRadius: '8px',
-                            padding: '8px',
-                            cursor: 'pointer',
-                            color: isLiked ? 'var(--vibe-accent)' : 'var(--text-secondary)',
-                            fontFamily: 'var(--font-primary)',
-                            fontSize: '13px',
-                            textAlign: 'left'
-                          }}
-                          onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
-                          onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                        >
-                          <Heart size={14} fill={isLiked ? 'var(--vibe-accent)' : 'none'} />
-                          <span>{isLiked ? 'Unlike Song' : 'Like Song'}</span>
-                        </button>
 
-                        {/* 2. Add to Playlist */}
-                        <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.05)', margin: '4px 0' }} />
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold', padding: '4px 8px', textTransform: 'uppercase' }}>Add to Playlist</span>
-                        {playlists.filter(p => p.id !== playlist.id).length === 0 ? (
-                          <span style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '6px 8px', fontStyle: 'italic' }}>No other playlists</span>
-                        ) : (
-                          playlists.filter(p => p.id !== playlist.id).map(p => {
-                            const songAlreadyAdded = p.songs.some(s => s.id === song.id);
-                            return (
-                              <button
-                                key={p.id}
-                                onClick={() => handleAddToPlaylist(p.id, song)}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  width: '100%',
-                                  background: 'transparent',
-                                  border: 'none',
-                                  borderRadius: '8px',
-                                  padding: '8px',
-                                  cursor: 'pointer',
-                                  color: 'var(--text-secondary)',
-                                  fontFamily: 'var(--font-primary)',
-                                  fontSize: '13px',
-                                  textAlign: 'left'
-                                }}
-                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
-                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                              >
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '110px' }}>{p.name}</span>
-                                {songAlreadyAdded && <Check size={12} color="var(--vibe-accent)" />}
-                              </button>
-                            );
-                          })
-                        )}
+                    <div className="song-dropdown-container" style={{ position: 'relative' }}>
+                      <button
+                        onClick={() => setActiveSongMenuId(activeSongMenuId === song.id ? null : song.id)}
+                        className="btn-icon"
+                        style={{ padding: '6px' }}
+                        title="Options"
+                      >
+                        <MoreHorizontal size={16} />
+                      </button>
+                      
+                      {activeSongMenuId === song.id && (
+                        <div style={{
+                          position: 'absolute',
+                          top: '32px',
+                          right: '0',
+                          borderRadius: '12px',
+                          padding: '6px',
+                          minWidth: '180px',
+                          boxShadow: '0 10px 30px rgba(0,0,0,0.8)',
+                          zIndex: 1000,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '2px',
+                          backgroundColor: '#12131a',
+                          border: '1px solid rgba(255,255,255,0.15)'
+                        }}>
+                          {/* 1. Toggle Like */}
+                          <button
+                            onClick={(e) => {
+                              toggleLikeSong(song, e);
+                              setActiveSongMenuId(null);
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '10px',
+                              width: '100%',
+                              background: 'transparent',
+                              border: 'none',
+                              borderRadius: '8px',
+                              padding: '8px',
+                              cursor: 'pointer',
+                              color: isLiked ? 'var(--vibe-accent)' : 'var(--text-secondary)',
+                              fontFamily: 'var(--font-primary)',
+                              fontSize: '13px',
+                              textAlign: 'left'
+                            }}
+                            onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
+                            onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <Heart size={14} fill={isLiked ? 'var(--vibe-accent)' : 'none'} />
+                            <span>{isLiked ? 'Unlike Song' : 'Like Song'}</span>
+                          </button>
 
-                        {/* 3. Like & Add to Playlist */}
-                        <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.05)', margin: '4px 0' }} />
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold', padding: '4px 8px', textTransform: 'uppercase' }}>Like & Add to Playlist</span>
-                        {playlists.filter(p => p.id !== playlist.id).length === 0 ? (
-                          <span style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '6px 8px', fontStyle: 'italic' }}>No other playlists</span>
-                        ) : (
-                          playlists.filter(p => p.id !== playlist.id).map(p => {
-                            const songAlreadyAdded = p.songs.some(s => s.id === song.id);
-                            return (
-                              <button
-                                key={p.id}
-                                onClick={() => handleLikeAndAddToPlaylist(p.id, song)}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  width: '100%',
-                                  background: 'transparent',
-                                  border: 'none',
-                                  borderRadius: '8px',
-                                  padding: '8px',
-                                  cursor: 'pointer',
-                                  color: 'var(--text-secondary)',
-                                  fontFamily: 'var(--font-primary)',
-                                  fontSize: '13px',
-                                  textAlign: 'left'
-                                }}
-                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
-                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                              >
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '110px' }}>{p.name}</span>
-                                {songAlreadyAdded && <Check size={12} color="var(--vibe-accent)" />}
-                              </button>
-                            );
-                          })
-                        )}
+                          {/* 2. Add to Playlist */}
+                          <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.05)', margin: '4px 0' }} />
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold', padding: '4px 8px', textTransform: 'uppercase' }}>Add to Playlist</span>
+                          {playlists.filter(p => p.id !== playlist.id).length === 0 ? (
+                            <span style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '6px 8px', fontStyle: 'italic' }}>No other playlists</span>
+                          ) : (
+                            playlists.filter(p => p.id !== playlist.id).map(p => {
+                              const songAlreadyAdded = p.songs.some(s => s.id === song.id);
+                              return (
+                                <button
+                                  key={p.id}
+                                  onClick={() => handleAddToPlaylist(p.id, song)}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    width: '100%',
+                                    background: 'transparent',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    padding: '8px',
+                                    cursor: 'pointer',
+                                    color: 'var(--text-secondary)',
+                                    fontFamily: 'var(--font-primary)',
+                                    fontSize: '13px',
+                                    textAlign: 'left'
+                                  }}
+                                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
+                                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                >
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '110px' }}>{p.name}</span>
+                                  {songAlreadyAdded && <Check size={12} color="var(--vibe-accent)" />}
+                                </button>
+                              );
+                            })
+                          )}
 
-                        {/* 4. Remove from this playlist */}
-                        {!isLikedFolder && (
-                          <>
-                            <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.05)', margin: '4px 0' }} />
-                            <button
-                              onClick={() => {
+                          {/* 3. Like & Add to Playlist */}
+                          <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.05)', margin: '4px 0' }} />
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold', padding: '4px 8px', textTransform: 'uppercase' }}>Like & Add to Playlist</span>
+                          {playlists.filter(p => p.id !== playlist.id).length === 0 ? (
+                            <span style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '6px 8px', fontStyle: 'italic' }}>No other playlists</span>
+                          ) : (
+                            playlists.filter(p => p.id !== playlist.id).map(p => {
+                              const songAlreadyAdded = p.songs.some(s => s.id === song.id);
+                              return (
+                                <button
+                                  key={p.id}
+                                  onClick={() => handleLikeAndAddToPlaylist(p.id, song)}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    width: '100%',
+                                    background: 'transparent',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    padding: '8px',
+                                    cursor: 'pointer',
+                                    color: 'var(--text-secondary)',
+                                    fontFamily: 'var(--font-primary)',
+                                    fontSize: '13px',
+                                    textAlign: 'left'
+                                  }}
+                                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
+                                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                >
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '110px' }}>{p.name}</span>
+                                  {songAlreadyAdded && <Check size={12} color="var(--vibe-accent)" />}
+                                </button>
+                              );
+                            })
+                          )}
+
+                          {/* 4. Remove from this playlist / Liked Songs */}
+                          <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.05)', margin: '4px 0' }} />
+                          <button
+                            onClick={(e) => {
+                              if (isLikedFolder) {
+                                toggleLikeSong(song, e);
+                              } else {
                                 removeSongFromPlaylist(playlist.id, song.id);
-                                setActiveSongMenuId(null);
-                              }}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '10px',
-                                width: '100%',
-                                background: 'transparent',
-                                border: 'none',
-                                borderRadius: '8px',
-                                padding: '8px',
-                                cursor: 'pointer',
-                                color: '#ef4444',
-                                fontFamily: 'var(--font-primary)',
-                                fontSize: '13px',
-                                textAlign: 'left'
-                              }}
-                              onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
-                              onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                            >
-                              <Trash2 size={14} />
-                              <span>Remove Song</span>
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    )}
+                              }
+                              setActiveSongMenuId(null);
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '10px',
+                              width: '100%',
+                              background: 'transparent',
+                              border: 'none',
+                              borderRadius: '8px',
+                              padding: '8px',
+                              cursor: 'pointer',
+                              color: '#ef4444',
+                              fontFamily: 'var(--font-primary)',
+                              fontSize: '13px',
+                              textAlign: 'left'
+                            }}
+                            onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+                            onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <Trash2 size={14} />
+                            <span>{isLikedFolder ? 'Remove from Liked' : 'Remove Song'}</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
