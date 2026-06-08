@@ -242,8 +242,8 @@ function Playlists({
                       }}>
                         {/* 1. Toggle Like */}
                         <button
-                          onClick={() => {
-                            toggleLikeSong(song);
+                          onClick={(e) => {
+                            toggleLikeSong(song, e);
                             setActiveSongMenuId(null);
                           }}
                           style={{

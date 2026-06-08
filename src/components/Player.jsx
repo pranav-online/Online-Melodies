@@ -129,7 +129,7 @@ function Player({
               </span>
             </div>
             <button
-              onClick={() => toggleLikeSong(currentSong)}
+              onClick={(e) => toggleLikeSong(currentSong, e)}
               className="btn-icon"
               style={{ padding: '6px', color: isLiked ? 'var(--vibe-accent)' : 'var(--text-secondary)' }}
               title={isLiked ? 'Unlike' : 'Like'}

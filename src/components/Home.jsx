@@ -257,7 +257,7 @@ function Home({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          toggleLikeSong(song);
+                          toggleLikeSong(song, e);
                         }}
                         style={{
                           position: 'absolute',
@@ -321,8 +321,8 @@ function Home({
                           }}>
                             {/* 1. Toggle Like */}
                             <button
-                              onClick={() => {
-                                toggleLikeSong(song);
+                              onClick={(e) => {
+                                toggleLikeSong(song, e);
                                 setActiveSongMenuId(null);
                               }}
                               style={{

@@ -8,6 +8,7 @@ import Queue from './components/Queue';
 import Lyrics from './components/Lyrics';
 import Visualizer from './components/Visualizer';
 import Equalizer from './components/Equalizer';
+import LikeAnimation from './components/LikeAnimation';
 
 // Helper to parse duration string (e.g. "3:45" or "1:02:14") to seconds
 export const parseDurationToSeconds = (durationStr) => {
@@ -382,75 +383,18 @@ function App() {
   };
 
   // Playlists and Library adjustments
-  const toggleLikeSong = (song) => {
+  const toggleLikeSong = (song, e) => {
     const exists = likedSongs.some(s => s.id === song.id);
     if (exists) {
       setLikedSongs(prev => prev.filter(s => s.id !== song.id));
     } else {
-      // Dynamic music note celebration custom-colored by song vibe
-      import('canvas-confetti').then((module) => {
-        const confettiInstance = module.default;
-        const shapeFromText = module.shapeFromText || confettiInstance.shapeFromText;
-        
-        const songVibe = detectVibe(song);
-        const vibeColors = {
-          classic: ['#1db954', '#1ed760', '#ffffff'],
-          neon: ['#f43f5e', '#fb7185', '#a855f7', '#ffffff'],
-          chill: ['#8b5cf6', '#a78bfa', '#3b82f6', '#ffffff'],
-          gold: ['#d97706', '#f59e0b', '#eab308', '#ffffff'],
-          ocean: ['#06b6d4', '#22d3ee', '#10b981', '#ffffff'],
-          crimson: ['#ef4444', '#f87171', '#7f1d1d', '#ffffff']
-        };
-        const colors = vibeColors[songVibe] || vibeColors.classic;
-        
-        let shapes = ['square', 'circle'];
-        if (shapeFromText) {
-          const scalar = 3.5;
-          shapes = [
-            shapeFromText({ text: '🎵', scalar }),
-            shapeFromText({ text: '🎶', scalar }),
-            shapeFromText({ text: '🎼', scalar }),
-            shapeFromText({ text: '❤️', scalar })
-          ];
-        }
-
-        // Center rising music bubble blast
-        confettiInstance({
-          particleCount: 45,
-          spread: 80,
-          origin: { y: 0.85 },
-          colors: colors,
-          shapes: shapes,
-          scalar: 3.5,
-          gravity: 0.85,
-          drift: 0.05,
-          ticks: 140
-        });
-
-        // Left and Right concert side-cannon blasts
-        setTimeout(() => {
-          confettiInstance({
-            particleCount: 15,
-            angle: 60,
-            spread: 50,
-            origin: { x: 0, y: 0.85 },
-            colors: colors,
-            shapes: shapes,
-            scalar: 3.0,
-            gravity: 0.85
-          });
-          confettiInstance({
-            particleCount: 15,
-            angle: 120,
-            spread: 50,
-            origin: { x: 1, y: 0.85 },
-            colors: colors,
-            shapes: shapes,
-            scalar: 3.0,
-            gravity: 0.85
-          });
-        }, 150);
-      });
+      // Dispatch custom event to trigger canvas laser lines & light show animation
+      const detail = { song };
+      if (e && e.clientX && e.clientY) {
+        detail.x = e.clientX;
+        detail.y = e.clientY;
+      }
+      window.dispatchEvent(new CustomEvent('trigger-like-animation', { detail }));
       setLikedSongs(prev => [...prev, song]);
     }
   };
@@ -691,6 +635,9 @@ function App() {
         playlists={playlists}
         addSongToPlaylist={addSongToPlaylist}
       />
+
+      {/* Full-screen Music Laser & Light show animation on Like */}
+      <LikeAnimation />
     </div>
   );
 }

@@ -358,8 +358,8 @@ function Search({ playSong, likedSongs, toggleLikeSong, playlists, addSongToPlay
                         }}>
                           {/* 1. Toggle Like */}
                           <button
-                            onClick={() => {
-                              toggleLikeSong(song);
+                            onClick={(e) => {
+                              toggleLikeSong(song, e);
                               setActivePlaylistSelect(null);
                             }}
                             style={{
