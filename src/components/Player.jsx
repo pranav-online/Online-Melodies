@@ -151,7 +151,7 @@ function Player({
                 <div style={{
                   position: 'absolute',
                   bottom: '48px',
-                  left: '0',
+                  right: '0',
                   borderRadius: '12px',
                   padding: '6px',
                   minWidth: '180px',
