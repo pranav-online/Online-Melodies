@@ -75,9 +75,53 @@ function SplashIntro({ onComplete }) {
       }
     }
 
+    class LightRay {
+      constructor(angle) {
+        this.angle = angle;
+        this.length = 0;
+        this.maxLength = Math.random() * 120 + 80;
+        this.speed = Math.random() * 3 + 3;
+        this.alpha = 0.8;
+        this.color = Math.random() > 0.5 ? 'rgba(29, 185, 84,' : 'rgba(99, 102, 241,';
+      }
+
+      update() {
+        this.length += this.speed;
+        this.alpha = 1 - this.length / this.maxLength;
+      }
+
+      draw() {
+        if (this.alpha <= 0) return;
+        ctx.save();
+        ctx.globalAlpha = this.alpha;
+        ctx.translate(width / 2, height / 2);
+        ctx.rotate(this.angle);
+
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(this.length, 0);
+
+        const grad = ctx.createLinearGradient(0, 0, this.length, 0);
+        grad.addColorStop(0, `${this.color} 0.8)`);
+        grad.addColorStop(1, `${this.color} 0)`);
+
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = Math.random() * 2 + 1;
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = this.color.replace('rgba', 'rgb').slice(0, -1);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
     // Populate particles
     const particleCount = 120;
     const particles = Array.from({ length: particleCount }, () => new Particle());
+
+    // Light rays and beat pulse state
+    const lightRays = [];
+    let beatOffset = 0;
+    let lastBeatTime = 0;
 
     // Visualizer bar values
     const barCount = 120;
@@ -109,6 +153,31 @@ function SplashIntro({ onComplete }) {
       ctx.stroke();
       ctx.restore();
 
+      // Trigger visual beats every 1.5 seconds
+      if (timestamp - lastBeatTime > 1500) {
+        beatOffset = 25; // Expands radius instantly
+        
+        // Emit 16 light rays radially
+        for (let i = 0; i < 16; i++) {
+          const angle = (i / 16) * Math.PI * 2 + Math.random() * 0.15;
+          lightRays.push(new LightRay(angle));
+        }
+        lastBeatTime = timestamp;
+      }
+
+      // Decay beatOffset
+      beatOffset += (0 - beatOffset) * 0.08;
+
+      // Update & draw light rays
+      for (let i = lightRays.length - 1; i >= 0; i--) {
+        const ray = lightRays[i];
+        ray.update();
+        ray.draw();
+        if (ray.alpha <= 0) {
+          lightRays.splice(i, 1);
+        }
+      }
+
       // Update & draw space particles
       particles.forEach((p) => {
         p.update();
@@ -118,7 +187,7 @@ function SplashIntro({ onComplete }) {
       // Draw premium circular sound wave visualizer around the central text area
       const centerX = width / 2;
       const centerY = height / 2;
-      const innerRadius = Math.min(width * 0.35, 240); // Responsive radius
+      const innerRadius = Math.min(width * 0.35, 240) + beatOffset; // Responsive radius with beat pulse
       const outerMax = innerRadius + 60;
 
       // Slowly mutate visualizer peaks to simulate a live sound spectrum
