@@ -9,6 +9,7 @@ import Lyrics from './components/Lyrics';
 import Visualizer from './components/Visualizer';
 import Equalizer from './components/Equalizer';
 import LikeAnimation from './components/LikeAnimation';
+import SplashIntro from './components/SplashIntro';
 
 // Helper to parse duration string (e.g. "3:45" or "1:02:14") to seconds
 export const parseDurationToSeconds = (durationStr) => {
@@ -33,6 +34,8 @@ export const formatTime = (secs) => {
 import { Menu } from 'lucide-react';
 
 function App() {
+  const [showSplash, setShowSplash] = useState(true);
+
   // Navigation & Active View Tab
   const [currentTab, setCurrentTab] = useState('home');
   const [activePlaylistId, setActivePlaylistId] = useState(null);
@@ -672,6 +675,11 @@ function App() {
 
       {/* Full-screen Music Laser & Light show animation on Like */}
       <LikeAnimation />
+
+      {/* Cinematic Splash Screen Intro */}
+      {showSplash && (
+        <SplashIntro onComplete={() => setShowSplash(false)} />
+      )}
     </div>
   );
 }
