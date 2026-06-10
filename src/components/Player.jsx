@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, 
   Volume2, VolumeX, Heart, Mic2, BarChart2, Sliders, 
-  ListMusic, Tv, Sparkles, Plus, Check
+  ListMusic, Tv, Sparkles, Plus, Check, Timer
 } from 'lucide-react';
 import { formatTime } from '../App';
 
@@ -34,10 +34,13 @@ function Player({
   currentTab,
   setCurrentTab,
   playlists = [],
-  addSongToPlaylist
+  addSongToPlaylist,
+  sleepTimer,
+  setSleepTimer
 }) {
   const [showVibeMenu, setShowVibeMenu] = useState(false);
   const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
+  const [showSleepMenu, setShowSleepMenu] = useState(false);
   const isLiked = currentSong && likedSongs.some(s => s.id === currentSong.id);
 
   useEffect(() => {
@@ -45,10 +48,13 @@ function Player({
       if (showPlaylistMenu && !e.target.closest('.playlist-dropdown-container')) {
         setShowPlaylistMenu(false);
       }
+      if (showSleepMenu && !e.target.closest('.sleep-dropdown-container')) {
+        setShowSleepMenu(false);
+      }
     };
     document.addEventListener('click', handleOutsideClick);
     return () => document.removeEventListener('click', handleOutsideClick);
-  }, [showPlaylistMenu]);
+  }, [showPlaylistMenu, showSleepMenu]);
 
   const handleSeek = (e) => {
     seekTo(parseFloat(e.target.value));
@@ -310,6 +316,128 @@ function Player({
 
       {/* Right: Sub-controls */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
+        {/* Sleep Timer */}
+        <div className="sleep-dropdown-container" style={{ position: 'relative' }}>
+          <button
+            onClick={() => setShowSleepMenu(!showSleepMenu)}
+            className={`btn-icon ${sleepTimer !== null ? 'active' : ''}`}
+            style={{ position: 'relative' }}
+            title="Sleep Timer"
+          >
+            <Timer size={16} />
+            {sleepTimer !== null && (
+              <span style={{
+                position: 'absolute',
+                fontSize: '8px',
+                fontWeight: '800',
+                backgroundColor: 'var(--vibe-accent)',
+                color: '#000',
+                borderRadius: '50%',
+                width: '12px',
+                height: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                top: '2px',
+                right: '2px'
+              }}>
+                {Math.ceil(sleepTimer / 60)}m
+              </span>
+            )}
+          </button>
+          
+          {showSleepMenu && (
+            <div className="glass-panel" style={{
+              position: 'absolute',
+              bottom: '50px',
+              right: '0',
+              borderRadius: '12px',
+              padding: '8px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px',
+              minWidth: '160px',
+              boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              zIndex: 1000
+            }}>
+               <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold', padding: '4px 8px', textTransform: 'uppercase' }}>Sleep Timer</span>
+               
+               {sleepTimer !== null && (
+                 <div style={{ fontSize: '11.5px', color: 'var(--vibe-accent)', padding: '2px 8px 6px 8px', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: '4px' }}>
+                   {Math.floor(sleepTimer / 60)}m {sleepTimer % 60}s remaining
+                 </div>
+               )}
+ 
+               {[
+                 { label: '10 Minutes', value: 10 * 60 },
+                 { label: '15 Minutes', value: 15 * 60 },
+                 { label: '30 Minutes', value: 30 * 60 },
+                 { label: '45 Minutes', value: 45 * 60 },
+                 { label: '1 Hour', value: 60 * 60 }
+               ].map(opt => (
+                 <button
+                   key={opt.label}
+                   onClick={() => {
+                     setSleepTimer(opt.value);
+                     setShowSleepMenu(false);
+                   }}
+                   style={{
+                     display: 'flex',
+                     alignItems: 'center',
+                     justifyContent: 'space-between',
+                     width: '100%',
+                     background: 'transparent',
+                     border: 'none',
+                     borderRadius: '8px',
+                     padding: '8px',
+                     cursor: 'pointer',
+                     color: 'var(--text-secondary)',
+                     fontFamily: 'var(--font-primary)',
+                     fontSize: '13px',
+                     textAlign: 'left',
+                     transition: 'all 0.15s'
+                   }}
+                   onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
+                   onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                 >
+                   {opt.label}
+                 </button>
+               ))}
+ 
+               {sleepTimer !== null && (
+                 <>
+                   <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.05)', margin: '4px 0' }} />
+                   <button
+                     onClick={() => {
+                       setSleepTimer(null);
+                       setShowSleepMenu(false);
+                     }}
+                     style={{
+                       display: 'flex',
+                       alignItems: 'center',
+                       width: '100%',
+                       background: 'transparent',
+                       border: 'none',
+                       borderRadius: '8px',
+                       padding: '8px',
+                       cursor: 'pointer',
+                       color: '#ef4444',
+                       fontFamily: 'var(--font-primary)',
+                       fontSize: '13px',
+                       textAlign: 'left'
+                     }}
+                     onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+                     onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                   >
+                     Turn Off Timer
+                   </button>
+                 </>
+               )}
+            </div>
+          )}
+        </div>
+
         {/* Dynamic Vibe Override Switcher */}
         <div style={{ position: 'relative' }}>
           <button

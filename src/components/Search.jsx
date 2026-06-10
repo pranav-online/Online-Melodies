@@ -3,7 +3,7 @@ import { Search as SearchIcon, Play, Heart, Plus, Loader2, Music, Check, MoreHor
 
 const musicFallbackSVG = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'><rect width='100' height='100' rx='12' fill='%231e293b'/><circle cx='50' cy='50' r='30' fill='%230f172a'/><circle cx='50' cy='50' r='10' fill='%2338bdf8'/><path d='M50 20 A30 30 0 0 1 80 50' stroke='%2338bdf8' stroke-width='2' fill='none' stroke-dasharray='4,4'/><circle cx='50' cy='50' r='4' fill='%230f172a'/></svg>";
 
-function Search({ playSong, likedSongs, toggleLikeSong, playlists, addSongToPlaylist }) {
+function Search({ playSong, likedSongs, toggleLikeSong, playlists, addSongToPlaylist, recentlyPlayed = [] }) {
   const [query, setQuery] = useState('');
   const [activeLang, setActiveLang] = useState('All');
   const [results, setResults] = useState([]);
@@ -119,6 +119,197 @@ function Search({ playSong, likedSongs, toggleLikeSong, playlists, addSongToPlay
     }
     addSongToPlaylist(playlistId, song);
     setActivePlaylistSelect(null);
+  };
+
+  const renderTrackRow = (song, idx, listContext) => {
+    const isLiked = likedSongs.some(s => s.id === song.id);
+    return (
+      <div
+        key={`${song.id}-${idx}`}
+        className="song-list-item-row"
+        onClick={() => playSong(song, listContext)}
+      >
+        {/* Index */}
+        <span className="hide-on-mobile" style={{ width: '30px', color: 'var(--text-muted)', fontSize: '14px', fontWeight: '500' }}>
+          {idx + 1}
+        </span>
+
+        {/* Image and Metadata */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: 0, paddingRight: '20px' }}>
+          <div style={{ position: 'relative', width: '44px', height: '44px', flexShrink: 0 }}>
+            <img 
+              src={song.thumbnail} 
+              alt={song.title} 
+              onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = musicFallbackSVG; }}
+              style={{ width: '100%', height: '100%', borderRadius: '6px', objectFit: 'cover' }}
+            />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            <span style={{
+              fontSize: '14.5px',
+              fontWeight: '600',
+              color: '#fff',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }} title={song.title}>
+              {song.title}
+            </span>
+            <span style={{ fontSize: '12px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {song.channelName} <span className="show-on-mobile">• {song.duration}</span>
+            </span>
+          </div>
+        </div>
+
+        {/* View statistics (Only show in search results, not in recent list) */}
+        {listContext === results && (
+          <span className="hide-on-mobile" style={{ width: '120px', color: 'var(--text-muted)', fontSize: '13px' }}>
+            {song.views || ''}
+          </span>
+        )}
+
+        {/* Duration */}
+        <span className="hide-on-mobile" style={{ width: '60px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'right', marginRight: '16px' }}>
+          {song.duration}
+        </span>
+
+        {/* Controls (Unified Options Menu) */}
+        <div className="playlist-dropdown-container" style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+          <button
+            onClick={() => setActivePlaylistSelect(activePlaylistSelect === song.id ? null : song.id)}
+            className="btn-icon"
+            style={{ padding: '6px' }}
+            title="Options"
+          >
+            <MoreHorizontal size={16} />
+          </button>
+          
+          {activePlaylistSelect === song.id && (
+            <div style={{
+              position: 'absolute',
+              top: '32px',
+              right: '0',
+              borderRadius: '12px',
+              padding: '6px',
+              minWidth: '180px',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.8)',
+              zIndex: 1000,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '2px',
+              backgroundColor: '#12131a',
+              border: '1px solid rgba(255,255,255,0.15)'
+            }}>
+              {/* 1. Toggle Like */}
+              <button
+                onClick={(e) => {
+                  toggleLikeSong(song, e);
+                  setActivePlaylistSelect(null);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  width: '100%',
+                  background: 'transparent',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '8px',
+                  cursor: 'pointer',
+                  color: isLiked ? 'var(--vibe-accent)' : 'var(--text-secondary)',
+                  fontFamily: 'var(--font-primary)',
+                  fontSize: '13px',
+                  textAlign: 'left'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
+                onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                <Heart size={14} fill={isLiked ? 'var(--vibe-accent)' : 'none'} />
+                <span>{isLiked ? 'Unlike Song' : 'Like Song'}</span>
+              </button>
+
+              {/* Divider */}
+              <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.05)', margin: '4px 0' }} />
+
+              {/* 2. Add to Playlist List */}
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold', padding: '4px 8px', textTransform: 'uppercase' }}>Add to Playlist</span>
+              {playlists.length === 0 ? (
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '6px 8px', fontStyle: 'italic' }}>No custom playlists</span>
+              ) : (
+                playlists.map(p => {
+                  const songAlreadyAdded = p.songs.some(s => s.id === song.id);
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => handleAddToPlaylist(p.id, song)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                        background: 'transparent',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '8px',
+                        cursor: 'pointer',
+                        color: 'var(--text-secondary)',
+                        fontFamily: 'var(--font-primary)',
+                        fontSize: '13px',
+                        textAlign: 'left'
+                      }}
+                      onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
+                      onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '110px' }}>{p.name}</span>
+                      {songAlreadyAdded && <Check size={12} color="var(--vibe-accent)" />}
+                    </button>
+                  );
+                })
+              )}
+
+              {/* Divider */}
+              <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.05)', margin: '4px 0' }} />
+
+              {/* 3. Like & Add to Playlist List */}
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold', padding: '4px 8px', textTransform: 'uppercase' }}>Like & Add to Playlist</span>
+              {playlists.length === 0 ? (
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '6px 8px', fontStyle: 'italic' }}>No custom playlists</span>
+              ) : (
+                playlists.map(p => {
+                  const songAlreadyAdded = p.songs.some(s => s.id === song.id);
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => handleLikeAndAddToPlaylist(p.id, song)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                        background: 'transparent',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '8px',
+                        cursor: 'pointer',
+                        color: 'var(--text-secondary)',
+                        fontFamily: 'var(--font-primary)',
+                        fontSize: '13px',
+                        textAlign: 'left'
+                      }}
+                      onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
+                      onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '110px' }}>{p.name}</span>
+                      {songAlreadyAdded && <Check size={12} color="var(--vibe-accent)" />}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -279,201 +470,25 @@ function Search({ playSong, likedSongs, toggleLikeSong, playlists, addSongToPlay
           <div className="glass-panel" style={{ borderRadius: '20px', padding: '16px 20px', overflow: 'hidden' }}>
             {/* Tracks List Table */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {results.map((song, idx) => {
-                const isLiked = likedSongs.some(s => s.id === song.id);
-                return (
-                  <div
-                    key={song.id}
-                    className="song-list-item-row"
-                    onClick={() => playSong(song, results)}
-                  >
-                    {/* Index */}
-                    <span className="hide-on-mobile" style={{ width: '30px', color: 'var(--text-muted)', fontSize: '14px', fontWeight: '500' }}>
-                      {idx + 1}
-                    </span>
-
-                    {/* Image and Metadata */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: 0, paddingRight: '20px' }}>
-                      <div style={{ position: 'relative', width: '44px', height: '44px', flexShrink: 0 }}>
-                        <img 
-                          src={song.thumbnail} 
-                          alt={song.title} 
-                          onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = musicFallbackSVG; }}
-                          style={{ width: '100%', height: '100%', borderRadius: '6px', objectFit: 'cover' }}
-                        />
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                        <span style={{
-                          fontSize: '14.5px',
-                          fontWeight: '600',
-                          color: '#fff',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis'
-                        }} title={song.title}>
-                          {song.title}
-                        </span>
-                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {song.channelName} <span className="show-on-mobile">• {song.duration}</span>
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* View statistics */}
-                    <span className="hide-on-mobile" style={{ width: '120px', color: 'var(--text-muted)', fontSize: '13px' }}>
-                      {song.views || ''}
-                    </span>
-
-                    {/* Duration */}
-                    <span className="hide-on-mobile" style={{ width: '60px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'right', marginRight: '16px' }}>
-                      {song.duration}
-                    </span>
-
-                    {/* Controls (Unified Options Menu) */}
-                    <div className="playlist-dropdown-container" style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
-                      <button
-                        onClick={() => setActivePlaylistSelect(activePlaylistSelect === song.id ? null : song.id)}
-                        className="btn-icon"
-                        style={{ padding: '6px' }}
-                        title="Options"
-                      >
-                        <MoreHorizontal size={16} />
-                      </button>
-                      
-                      {activePlaylistSelect === song.id && (
-                        <div style={{
-                          position: 'absolute',
-                          top: '32px',
-                          right: '0',
-                          borderRadius: '12px',
-                          padding: '6px',
-                          minWidth: '180px',
-                          boxShadow: '0 10px 30px rgba(0,0,0,0.8)',
-                          zIndex: 1000,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '2px',
-                          backgroundColor: '#12131a',
-                          border: '1px solid rgba(255,255,255,0.15)'
-                        }}>
-                          {/* 1. Toggle Like */}
-                          <button
-                            onClick={(e) => {
-                              toggleLikeSong(song, e);
-                              setActivePlaylistSelect(null);
-                            }}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '10px',
-                              width: '100%',
-                              background: 'transparent',
-                              border: 'none',
-                              borderRadius: '8px',
-                              padding: '8px',
-                              cursor: 'pointer',
-                              color: isLiked ? 'var(--vibe-accent)' : 'var(--text-secondary)',
-                              fontFamily: 'var(--font-primary)',
-                              fontSize: '13px',
-                              textAlign: 'left'
-                            }}
-                            onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
-                            onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                          >
-                            <Heart size={14} fill={isLiked ? 'var(--vibe-accent)' : 'none'} />
-                            <span>{isLiked ? 'Unlike Song' : 'Like Song'}</span>
-                          </button>
-
-                          {/* Divider */}
-                          <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.05)', margin: '4px 0' }} />
-
-                          {/* 2. Add to Playlist List */}
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold', padding: '4px 8px', textTransform: 'uppercase' }}>Add to Playlist</span>
-                          {playlists.length === 0 ? (
-                            <span style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '6px 8px', fontStyle: 'italic' }}>No custom playlists</span>
-                          ) : (
-                            playlists.map(p => {
-                              const songAlreadyAdded = p.songs.some(s => s.id === song.id);
-                              return (
-                                <button
-                                  key={p.id}
-                                  onClick={() => handleAddToPlaylist(p.id, song)}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    width: '100%',
-                                    background: 'transparent',
-                                    border: 'none',
-                                    borderRadius: '8px',
-                                    padding: '8px',
-                                    cursor: 'pointer',
-                                    color: 'var(--text-secondary)',
-                                    fontFamily: 'var(--font-primary)',
-                                    fontSize: '13px',
-                                    textAlign: 'left'
-                                  }}
-                                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
-                                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                                >
-                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '110px' }}>{p.name}</span>
-                                  {songAlreadyAdded && <Check size={12} color="var(--vibe-accent)" />}
-                                </button>
-                              );
-                            })
-                          )}
-
-                          {/* Divider */}
-                          <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.05)', margin: '4px 0' }} />
-
-                          {/* 3. Like & Add to Playlist List */}
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 'bold', padding: '4px 8px', textTransform: 'uppercase' }}>Like & Add to Playlist</span>
-                          {playlists.length === 0 ? (
-                            <span style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '6px 8px', fontStyle: 'italic' }}>No custom playlists</span>
-                          ) : (
-                            playlists.map(p => {
-                              const songAlreadyAdded = p.songs.some(s => s.id === song.id);
-                              return (
-                                <button
-                                  key={p.id}
-                                  onClick={() => handleLikeAndAddToPlaylist(p.id, song)}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    width: '100%',
-                                    background: 'transparent',
-                                    border: 'none',
-                                    borderRadius: '8px',
-                                    padding: '8px',
-                                    cursor: 'pointer',
-                                    color: 'var(--text-secondary)',
-                                    fontFamily: 'var(--font-primary)',
-                                    fontSize: '13px',
-                                    textAlign: 'left'
-                                  }}
-                                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)'}
-                                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                                >
-                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '110px' }}>{p.name}</span>
-                                  {songAlreadyAdded && <Check size={12} color="var(--vibe-accent)" />}
-                                </button>
-                              );
-                            })
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                  </div>
-                );
-              })}
+              {results.map((song, idx) => renderTrackRow(song, idx, results))}
             </div>
           </div>
         ) : query.trim() ? (
           <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
             <Music size={32} />
             <span>No results found. Try adjusting your query or tag filter.</span>
+          </div>
+        ) : recentlyPlayed && recentlyPlayed.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ paddingLeft: '8px' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#fff', marginBottom: '4px' }}>Recently Played</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Jump back into your recently viewed tracks.</p>
+            </div>
+            <div className="glass-panel" style={{ borderRadius: '20px', padding: '16px 20px', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {recentlyPlayed.slice(0, 5).map((song, idx) => renderTrackRow(song, idx, recentlyPlayed))}
+              </div>
+            </div>
           </div>
         ) : (
           <div style={{ textAlign: 'center', padding: '80px 0', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>

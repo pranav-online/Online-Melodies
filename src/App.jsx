@@ -54,6 +54,7 @@ function App() {
   const [repeatMode, setRepeatMode] = useState('none'); // 'none' | 'all' | 'one'
   const [showMiniPlayer, setShowMiniPlayer] = useState(false);
   const [currentVibe, setCurrentVibe] = useState('classic');
+  const [sleepTimer, setSleepTimer] = useState(null); // time in seconds
 
   // Media Playback lists
   const [queue, setQueue] = useState([]);
@@ -209,6 +210,36 @@ function App() {
     }
     return () => clearInterval(interval);
   }, [isPlaying, ytPlayer]);
+
+  // Sleep Timer countdown loop
+  useEffect(() => {
+    if (sleepTimer === null) return;
+
+    if (sleepTimer <= 0) {
+      if (ytPlayer && playerReadyRef.current) {
+        try {
+          ytPlayer.pauseVideo();
+        } catch (e) {
+          console.error('Failed to pause player on sleep timer completion:', e);
+        }
+      }
+      setIsPlaying(false);
+      setSleepTimer(null);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setSleepTimer(prev => {
+        if (prev === null || prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [sleepTimer, ytPlayer]);
 
   // Vibe detection helper
   const detectVibe = (song) => {
@@ -460,6 +491,7 @@ function App() {
             toggleLikeSong={toggleLikeSong}
             playlists={playlists}
             addSongToPlaylist={addSongToPlaylist}
+            recentlyPlayed={recentlyPlayed}
           />
         );
       case 'liked':
@@ -634,6 +666,8 @@ function App() {
         setCurrentTab={setCurrentTab}
         playlists={playlists}
         addSongToPlaylist={addSongToPlaylist}
+        sleepTimer={sleepTimer}
+        setSleepTimer={setSleepTimer}
       />
 
       {/* Full-screen Music Laser & Light show animation on Like */}
