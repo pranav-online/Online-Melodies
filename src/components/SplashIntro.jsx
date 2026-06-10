@@ -18,14 +18,19 @@ function SplashIntro({ onComplete }) {
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
-    let width = (canvas.width = window.innerWidth);
-    let height = (canvas.height = window.innerHeight);
+    const isMobile = window.innerWidth <= 768;
+    const resScale = isMobile ? 0.65 : 1.0; // Render at 65% resolution on mobile to save GPU memory
+
+    let width = (canvas.width = window.innerWidth * resScale);
+    let height = (canvas.height = window.innerHeight * resScale);
 
     // Dynamic resize handler
     const handleResize = () => {
       if (!canvas) return;
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
+      const isMobileNow = window.innerWidth <= 768;
+      const scale = isMobileNow ? 0.65 : 1.0;
+      width = canvas.width = window.innerWidth * scale;
+      height = canvas.height = window.innerHeight * scale;
     };
     window.addEventListener('resize', handleResize);
 
@@ -99,8 +104,6 @@ function SplashIntro({ onComplete }) {
       }
     }
 
-    const isMobile = window.innerWidth <= 768;
-
     // Populate particles (reduced count on mobile for smoother framerate)
     const particleCount = isMobile ? 45 : 120;
     const particles = Array.from({ length: particleCount }, () => new Particle());
@@ -124,20 +127,22 @@ function SplashIntro({ onComplete }) {
 
       time += 0.025;
 
-      // Draw faint background rotating sound waves
-      ctx.globalAlpha = 0.05;
-      ctx.save();
-      ctx.translate(width / 2, height / 2);
-      ctx.rotate(time * 0.05);
-      ctx.beginPath();
-      for (let i = 0; i < 6; i++) {
-        const r = 180 + Math.sin(time + i) * 15;
-        ctx.arc(0, 0, r, 0, Math.PI * 2);
+      // Draw faint background rotating sound waves (disabled on mobile for speed)
+      if (!isMobile) {
+        ctx.globalAlpha = 0.05;
+        ctx.save();
+        ctx.translate(width / 2, height / 2);
+        ctx.rotate(time * 0.05);
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const r = 180 + Math.sin(time + i) * 15;
+          ctx.arc(0, 0, r, 0, Math.PI * 2);
+        }
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
       }
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.restore();
 
       // Trigger green wave pulse exactly once at 1.5 seconds
       if (!waveTriggered && timestamp > 1500) {
@@ -155,11 +160,11 @@ function SplashIntro({ onComplete }) {
         }
       }
 
-      // Update & draw space particles
-      particles.forEach((p) => {
-        p.update();
-        p.draw();
-      });
+      // Update & draw space particles (simple for-loop avoids closure allocation)
+      for (let i = 0; i < particleCount; i++) {
+        particles[i].update();
+        particles[i].draw();
+      }
 
       // Draw premium circular sound wave visualizer around the central text area
       const centerX = width / 2;
@@ -180,27 +185,44 @@ function SplashIntro({ onComplete }) {
 
       // Render the audio wave circle
       ctx.globalAlpha = 0.45;
-      for (let i = 0; i < barCount; i++) {
-        const angle = (i / barCount) * Math.PI * 2 + (time * 0.08);
-        const val = barValues[i];
-        
-        // Compute coordinates
-        const startX = centerX + Math.cos(angle) * innerRadius;
-        const startY = centerY + Math.sin(angle) * innerRadius;
-        const endX = centerX + Math.cos(angle) * (innerRadius + val);
-        const endY = centerY + Math.sin(angle) * (innerRadius + val);
+      ctx.lineWidth = 2.5;
 
-        // Vibe accent gradient coloring
-        const grad = ctx.createLinearGradient(startX, startY, endX, endY);
-        grad.addColorStop(0, 'rgba(99, 102, 241, 0.2)'); // Indigo start
-        grad.addColorStop(1, 'rgba(29, 185, 84, 0.7)');  // Accent green end
+      if (isMobile) {
+        // Peak performance: use a single solid color stroke once to avoid gradient garbage collection
+        ctx.strokeStyle = 'rgba(29, 185, 84, 0.75)';
+        for (let i = 0; i < barCount; i++) {
+          const angle = (i / barCount) * Math.PI * 2 + (time * 0.08);
+          const val = barValues[i];
+          const startX = centerX + Math.cos(angle) * innerRadius;
+          const startY = centerY + Math.sin(angle) * innerRadius;
+          const endX = centerX + Math.cos(angle) * (innerRadius + val);
+          const endY = centerY + Math.sin(angle) * (innerRadius + val);
 
-        ctx.beginPath();
-        ctx.moveTo(startX, startY);
-        ctx.lineTo(endX, endY);
-        ctx.strokeStyle = grad;
-        ctx.lineWidth = 2.5;
-        ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(endX, endY);
+          ctx.stroke();
+        }
+      } else {
+        // Gradient stroke for desktop
+        for (let i = 0; i < barCount; i++) {
+          const angle = (i / barCount) * Math.PI * 2 + (time * 0.08);
+          const val = barValues[i];
+          const startX = centerX + Math.cos(angle) * innerRadius;
+          const startY = centerY + Math.sin(angle) * innerRadius;
+          const endX = centerX + Math.cos(angle) * (innerRadius + val);
+          const endY = centerY + Math.sin(angle) * (innerRadius + val);
+
+          const grad = ctx.createLinearGradient(startX, startY, endX, endY);
+          grad.addColorStop(0, 'rgba(99, 102, 241, 0.2)');
+          grad.addColorStop(1, 'rgba(29, 185, 84, 0.7)');
+
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(endX, endY);
+          ctx.strokeStyle = grad;
+          ctx.stroke();
+        }
       }
 
       animationFrameId.current = requestAnimationFrame(animate);
@@ -208,11 +230,10 @@ function SplashIntro({ onComplete }) {
 
     animationFrameId.current = requestAnimationFrame(animate);
 
-    // Auto complete timeline triggers
-    // Letter transitions finish around 3s. Let's auto-fade at 4.2 seconds
+    // Auto complete timeline triggers (snappy splash duration: 2.2 seconds)
     const autoCompleteTimer = setTimeout(() => {
       handleSkip();
-    }, 4200);
+    }, 2200);
 
     return () => {
       window.removeEventListener('resize', handleResize);
@@ -224,10 +245,10 @@ function SplashIntro({ onComplete }) {
   const handleSkip = () => {
     if (isFading) return;
     setIsFading(true);
-    // Transition overlay opacity fades over 1.2s. Then unmount.
+    // Transition overlay opacity fades over 600ms. Then unmount.
     setTimeout(() => {
       onComplete();
-    }, 1200);
+    }, 600);
   };
 
   return (

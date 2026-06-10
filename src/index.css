@@ -613,7 +613,7 @@ input[type="range"]:hover::-webkit-slider-thumb {
   justify-content: center;
   z-index: 99999;
   overflow: hidden;
-  transition: opacity 1.2s cubic-bezier(0.25, 1, 0.5, 1), transform 1.2s cubic-bezier(0.25, 1, 0.5, 1);
+  transition: opacity 0.6s cubic-bezier(0.25, 1, 0.5, 1), transform 0.6s cubic-bezier(0.25, 1, 0.5, 1);
   pointer-events: all;
 }
 
