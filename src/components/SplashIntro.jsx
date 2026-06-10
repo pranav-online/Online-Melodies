@@ -68,10 +68,7 @@ function SplashIntro({ onComplete }) {
         ctx.arc(px, py, size, 0, Math.PI * 2);
         ctx.fillStyle = this.color;
         ctx.globalAlpha = opacity;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = this.color;
-        ctx.fill();
-        ctx.shadowBlur = 0; // Reset
+        ctx.fill(); // Removed expensive shadowBlur for performance
       }
     }
 
@@ -96,24 +93,24 @@ function SplashIntro({ onComplete }) {
         ctx.beginPath();
         ctx.arc(width / 2, height / 2, this.radius, 0, Math.PI * 2);
         ctx.strokeStyle = `${this.color} ${this.alpha})`;
-        ctx.lineWidth = 1.5;
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = 'rgb(29, 185, 84)';
+        ctx.lineWidth = 2.0; // Slightly thicker stroke to compensate for shadow removal
         ctx.stroke();
         ctx.restore();
       }
     }
 
-    // Populate particles
-    const particleCount = 120;
+    const isMobile = window.innerWidth <= 768;
+
+    // Populate particles (reduced count on mobile for smoother framerate)
+    const particleCount = isMobile ? 45 : 120;
     const particles = Array.from({ length: particleCount }, () => new Particle());
 
     // Shockwave scheduler
     const shockwaves = [];
     let waveTriggered = false;
 
-    // Visualizer bar values
-    const barCount = 120;
+    // Visualizer bar values (reduced count on mobile for smoother framerate)
+    const barCount = isMobile ? 60 : 120;
     const barValues = new Array(barCount).fill(0);
     const targetBarValues = new Array(barCount).fill(0);
 

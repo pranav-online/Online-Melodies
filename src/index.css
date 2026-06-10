@@ -648,7 +648,8 @@ input[type="range"]:hover::-webkit-slider-thumb {
 
 .splash-title-wrapper {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  white-space: nowrap;
   justify-content: center;
   gap: 2px;
   margin-bottom: 8px;
@@ -658,7 +659,7 @@ input[type="range"]:hover::-webkit-slider-thumb {
   display: inline-block;
   font-family: var(--font-secondary);
   font-weight: 800;
-  font-size: 72px;
+  font-size: clamp(32px, 5.5vw, 72px);
   color: #ffffff;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -671,7 +672,7 @@ input[type="range"]:hover::-webkit-slider-thumb {
 
 /* Add slight margins between words */
 .splash-char.space {
-  width: 24px;
+  width: clamp(12px, 2.5vw, 24px);
 }
 
 .splash-subtitle {
@@ -774,11 +775,11 @@ input[type="range"]:hover::-webkit-slider-thumb {
 /* Responsive adjustments for mobile viewports */
 @media (max-width: 768px) {
   .splash-char {
-    font-size: 38px;
+    font-size: clamp(16px, 5.8vw, 24px);
   }
   
   .splash-char.space {
-    width: 12px;
+    width: clamp(6px, 2.2vw, 10px);
   }
   
   .splash-subtitle {
