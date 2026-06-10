@@ -75,42 +75,9 @@ function SplashIntro({ onComplete }) {
       }
     }
 
-    // Shockwave classes for sonic beat ripple effects
-    class Shockwave {
-      constructor() {
-        this.radius = 0;
-        this.maxRadius = Math.max(width, height) * 0.7;
-        this.speed = Math.random() * 3 + 3;
-        this.alpha = 0.6;
-        this.color = Math.random() > 0.5 ? 'rgba(29, 185, 84,' : 'rgba(99, 102, 241,';
-      }
-
-      update() {
-        this.radius += this.speed;
-        this.alpha = 1 - this.radius / this.maxRadius;
-      }
-
-      draw() {
-        if (this.alpha <= 0) return;
-        ctx.globalAlpha = this.alpha;
-        ctx.beginPath();
-        ctx.arc(width / 2, height / 2, this.radius, 0, Math.PI * 2);
-        ctx.strokeStyle = `${this.color} ${this.alpha})`;
-        ctx.lineWidth = 1.5;
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = this.color.replace('rgba', 'rgb').slice(0, -1);
-        ctx.stroke();
-        ctx.shadowBlur = 0; // Reset
-      }
-    }
-
     // Populate particles
     const particleCount = 120;
     const particles = Array.from({ length: particleCount }, () => new Particle());
-
-    // Shockwave scheduler
-    const shockwaves = [];
-    let lastWaveTime = 0;
 
     // Visualizer bar values
     const barCount = 120;
@@ -141,22 +108,6 @@ function SplashIntro({ onComplete }) {
       ctx.lineWidth = 1;
       ctx.stroke();
       ctx.restore();
-
-      // Trigger wave pulses on beats (every ~1.6 seconds)
-      if (timestamp - lastWaveTime > 1600) {
-        shockwaves.push(new Shockwave());
-        lastWaveTime = timestamp;
-      }
-
-      // Update & draw shockwaves
-      for (let i = shockwaves.length - 1; i >= 0; i--) {
-        const wave = shockwaves[i];
-        wave.update();
-        wave.draw();
-        if (wave.alpha <= 0) {
-          shockwaves.splice(i, 1);
-        }
-      }
 
       // Update & draw space particles
       particles.forEach((p) => {
