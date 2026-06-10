@@ -110,7 +110,7 @@ function SplashIntro({ onComplete }) {
 
     // Shockwave scheduler
     const shockwaves = [];
-    let lastWaveTime = 0;
+    let waveTriggered = false;
 
     // Visualizer bar values
     const barCount = 120;
@@ -142,10 +142,10 @@ function SplashIntro({ onComplete }) {
       ctx.stroke();
       ctx.restore();
 
-      // Trigger green wave pulses on beats (every ~1.6 seconds)
-      if (timestamp - lastWaveTime > 1600) {
+      // Trigger green wave pulse exactly once at 1.5 seconds
+      if (!waveTriggered && timestamp > 1500) {
         shockwaves.push(new Shockwave());
-        lastWaveTime = timestamp;
+        waveTriggered = true;
       }
 
       // Update & draw shockwaves
