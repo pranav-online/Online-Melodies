@@ -95,9 +95,8 @@ function App() {
   const [eqPreset, setEqPreset] = useState('flat');
   const [eqGains, setEqGains] = useState({ bass: 0, mid: 0, treble: 0, vocal: 0 });
 
-  // YouTube IFrame Player References
-  const [ytPlayer, setYtPlayer] = useState(null);
-  const playerReadyRef = useRef(false);
+  // Native HTML5 Audio Player Reference
+  const audioRef = useRef(null);
 
   // Synchronize localStorage
   useEffect(() => {
@@ -112,8 +111,49 @@ function App() {
     localStorage.setItem('online_melodies_recent', JSON.stringify(recentlyPlayed));
   }, [recentlyPlayed]);
 
-  // Parse Spotify access token from URL hash on redirect
+  // Exchange Spotify OAuth Code for Access Token (PKCE flow)
+  const fetchSpotifyTokenWithCode = async (code, codeVerifier, clientId) => {
+    const redirectUri = window.location.origin + '/';
+    try {
+      const response = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          client_id: clientId,
+          grant_type: 'authorization_code',
+          code: code,
+          redirect_uri: redirectUri,
+          code_verifier: codeVerifier,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to exchange code for token');
+      }
+
+      const data = await response.json();
+      if (data.access_token) {
+        setSpotifyToken(data.access_token);
+        setAutoOpenSpotifyImport(true);
+        
+        // Resume pending URL import if exists
+        const pendingUrl = localStorage.getItem('online_melodies_pending_url');
+        if (pendingUrl) {
+          setPendingPlaylistUrl(pendingUrl);
+        }
+      }
+    } catch (err) {
+      console.error('Spotify token exchange failed:', err);
+    } finally {
+      localStorage.removeItem('spotify_code_verifier');
+    }
+  };
+
+  // Parse Spotify access token from URL hash or authorization code from search query on redirect callback
   useEffect(() => {
+    // 1. Try Implicit Grant fallback (from hash)
     const hash = window.location.hash;
     if (hash) {
       const params = new URLSearchParams(hash.substring(1));
@@ -122,136 +162,36 @@ function App() {
         setSpotifyToken(token);
         setAutoOpenSpotifyImport(true);
         
-        // Resume pending URL import if exists
         const pendingUrl = localStorage.getItem('online_melodies_pending_url');
         if (pendingUrl) {
           setPendingPlaylistUrl(pendingUrl);
         }
         
-        // Clean up hash from URL to keep address bar clean
         window.history.replaceState(null, null, window.location.pathname);
+        return;
       }
     }
-  }, []);
 
-  // Load YouTube Player API
-  useEffect(() => {
-    if (!window.YT) {
-      const tag = document.createElement('script');
-      tag.src = 'https://www.youtube.com/iframe_api';
-      const firstScriptTag = document.getElementsByTagName('script')[0];
-      firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-
-      window.onYouTubeIframeAPIReady = () => {
-        initYTPlayer();
-      };
-    } else {
-      initYTPlayer();
-    }
-
-    return () => {
-      // clean up global callback
-      window.onYouTubeIframeAPIReady = null;
-    };
-  }, []);
-
-  // Refs to avoid stale closures in YouTube Player callbacks
-  const onStateChangeRef = useRef();
-  const onErrorRef = useRef();
-
-  // Keep references up to date with every render
-  useEffect(() => {
-    onStateChangeRef.current = (state) => {
-      if (state === window.YT.PlayerState.PLAYING) {
-        setIsPlaying(true);
-        if (ytPlayer) {
-          const dur = ytPlayer.getDuration();
-          if (dur) setDuration(dur);
-        }
-      } else if (state === window.YT.PlayerState.PAUSED) {
-        setIsPlaying(false);
-      } else if (state === window.YT.PlayerState.ENDED) {
-        setIsPlaying(false);
-        handlePlaybackEnded();
+    // 2. Try PKCE code exchange (from search query)
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    if (code) {
+      const codeVerifier = localStorage.getItem('spotify_code_verifier');
+      const clientId = localStorage.getItem('online_melodies_spotify_client_id');
+      if (codeVerifier && clientId) {
+        fetchSpotifyTokenWithCode(code, codeVerifier, clientId);
       }
-    };
-  });
-
-  useEffect(() => {
-    onErrorRef.current = (event) => {
-      console.error('YouTube Player Error:', event.data);
-      setIsPlaying(false);
-      playNextSong();
-    };
-  });
-
-  const initYTPlayer = () => {
-    if (playerReadyRef.current) return;
-    try {
-      window.ytPlayerInstance = new window.YT.Player('yt-player', {
-        height: '100%',
-        width: '100%',
-        videoId: '',
-        playerVars: {
-          autoplay: 0,
-          controls: 0,
-          disablekb: 1,
-          fs: 0,
-          modestbranding: 1,
-          rel: 0,
-          showinfo: 0,
-          iv_load_policy: 3
-        },
-        events: {
-          onReady: (event) => {
-            setYtPlayer(event.target);
-            playerReadyRef.current = true;
-            event.target.setVolume(volume);
-          },
-          onStateChange: (event) => {
-            if (onStateChangeRef.current) {
-              onStateChangeRef.current(event.data);
-            }
-          },
-          onError: (event) => {
-            if (onErrorRef.current) {
-              onErrorRef.current(event);
-            }
-          }
-        }
-      });
-    } catch (err) {
-      console.error('Failed to initialize YouTube IFrame Player:', err);
+      window.history.replaceState(null, null, window.location.pathname);
     }
-  };
-
-  // Poll current time while playing
-  useEffect(() => {
-    let interval;
-    if (isPlaying && ytPlayer) {
-      interval = setInterval(() => {
-        try {
-          const time = ytPlayer.getCurrentTime();
-          setCurrentTime(time);
-        } catch (e) {
-          // ignore transient player errors
-        }
-      }, 500);
-    }
-    return () => clearInterval(interval);
-  }, [isPlaying, ytPlayer]);
+  }, []);
 
   // Sleep Timer countdown loop
   useEffect(() => {
     if (sleepTimer === null) return;
 
     if (sleepTimer <= 0) {
-      if (ytPlayer && playerReadyRef.current) {
-        try {
-          ytPlayer.pauseVideo();
-        } catch (e) {
-          console.error('Failed to pause player on sleep timer completion:', e);
-        }
+      if (audioRef.current) {
+        audioRef.current.pause();
       }
       setIsPlaying(false);
       setSleepTimer(null);
@@ -269,7 +209,7 @@ function App() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [sleepTimer, ytPlayer]);
+  }, [sleepTimer]);
 
   // Vibe detection helper
   const detectVibe = (song) => {
@@ -294,6 +234,53 @@ function App() {
   useEffect(() => {
     document.body.className = `vibe-${currentVibe}`;
   }, [currentVibe]);
+
+  // Sync initial volume and mute preferences on element mount
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume / 100;
+      audioRef.current.muted = isMuted;
+    }
+  }, [volume, isMuted]);
+
+  // Set up Media Session API for lock screen background controls
+  useEffect(() => {
+    if (currentSong && 'mediaSession' in navigator) {
+      navigator.mediaSession.metadata = new window.MediaMetadata({
+        title: currentSong.title,
+        artist: currentSong.channelName,
+        album: 'Online-Melodies',
+        artwork: [
+          { src: currentSong.thumbnail, sizes: '512x512', type: 'image/jpeg' }
+        ]
+      });
+
+      navigator.mediaSession.setActionHandler('play', () => {
+        if (audioRef.current) {
+          audioRef.current.play().catch(e => console.error(e));
+          setIsPlaying(true);
+        }
+      });
+      navigator.mediaSession.setActionHandler('pause', () => {
+        if (audioRef.current) {
+          audioRef.current.pause();
+          setIsPlaying(false);
+        }
+      });
+      navigator.mediaSession.setActionHandler('seekto', (details) => {
+        if (audioRef.current && details.seekTime) {
+          audioRef.current.currentTime = details.seekTime;
+          setCurrentTime(details.seekTime);
+        }
+      });
+      navigator.mediaSession.setActionHandler('previoustrack', () => {
+        playPreviousSong();
+      });
+      navigator.mediaSession.setActionHandler('nexttrack', () => {
+        playNextSong();
+      });
+    }
+  }, [currentSong]);
 
   // Main playback commands
   const playSong = (song, upcomingQueue = null) => {
@@ -331,25 +318,25 @@ function App() {
       return [song, ...filtered].slice(0, 30); // Cap at 30
     });
 
-    if (ytPlayer && playerReadyRef.current) {
+    if (audioRef.current) {
       try {
-        ytPlayer.loadVideoById(song.id);
-        ytPlayer.playVideo();
+        audioRef.current.src = `/api/stream/${song.id}`;
+        audioRef.current.play().catch(e => console.error("Playback start failed:", e));
         setIsPlaying(true);
       } catch (err) {
-        console.error('Failed to load video on YT Player:', err);
+        console.error('Failed to load audio stream:', err);
       }
     }
   };
 
   const togglePlay = () => {
-    if (!ytPlayer || !currentSong) return;
+    if (!audioRef.current || !currentSong) return;
     try {
       if (isPlaying) {
-        ytPlayer.pauseVideo();
+        audioRef.current.pause();
         setIsPlaying(false);
       } else {
-        ytPlayer.playVideo();
+        audioRef.current.play().catch(e => console.error(e));
         setIsPlaying(true);
       }
     } catch (e) {
@@ -358,9 +345,9 @@ function App() {
   };
 
   const seekTo = (seconds) => {
-    if (!ytPlayer) return;
+    if (!audioRef.current) return;
     try {
-      ytPlayer.seekTo(seconds, true);
+      audioRef.current.currentTime = seconds;
       setCurrentTime(seconds);
     } catch (e) {
       console.error(e);
@@ -369,12 +356,12 @@ function App() {
 
   const changeVolume = (newVolume) => {
     setVolume(newVolume);
-    if (!ytPlayer) return;
+    if (!audioRef.current) return;
     try {
-      ytPlayer.setVolume(newVolume);
+      audioRef.current.volume = newVolume / 100;
       if (newVolume > 0 && isMuted) {
         setIsMuted(false);
-        ytPlayer.unMute();
+        audioRef.current.muted = false;
       }
     } catch (e) {
       console.error(e);
@@ -382,16 +369,11 @@ function App() {
   };
 
   const toggleMute = () => {
-    if (!ytPlayer) return;
+    if (!audioRef.current) return;
     try {
-      if (isMuted) {
-        setIsMuted(false);
-        ytPlayer.unMute();
-        ytPlayer.setVolume(volume);
-      } else {
-        setIsMuted(true);
-        ytPlayer.mute();
-      }
+      const nextMute = !isMuted;
+      setIsMuted(nextMute);
+      audioRef.current.muted = nextMute;
     } catch (e) {
       console.error(e);
     }
@@ -654,26 +636,23 @@ function App() {
         />
       )}
 
-      {/* Floating mini-video player (required for YouTube IFrame rendering) */}
-      <div 
-        id="yt-player-container" 
-        style={{
-          position: 'fixed',
-          bottom: '110px',
-          right: '20px',
-          width: '280px',
-          height: '160px',
-          zIndex: 1000,
-          display: showMiniPlayer && currentSong ? 'block' : 'none',
-          overflow: 'hidden',
-          borderRadius: '16px',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.6)',
-          background: '#000'
+      {/* Native HTML5 Audio Player for background playback */}
+      <audio
+        ref={audioRef}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onTimeUpdate={() => {
+          if (audioRef.current) {
+            setCurrentTime(audioRef.current.currentTime);
+          }
         }}
-      >
-        <div id="yt-player" style={{ width: '100%', height: '100%' }}></div>
-      </div>
+        onDurationChange={() => {
+          if (audioRef.current) {
+            setDuration(audioRef.current.duration || 0);
+          }
+        }}
+        onEnded={handlePlaybackEnded}
+      />
 
       {/* Bottom Playback bar */}
       <Player 

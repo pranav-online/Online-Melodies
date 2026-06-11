@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Home, Search, Heart, Music, Sliders, Mic2, BarChart2, Plus, ListMusic, X, Check, ClipboardList, FileText } from 'lucide-react';
+import { Home, Search, Heart, Music, Sliders, Mic2, BarChart2, Plus, ListMusic, X, Download, Check, ClipboardList, FileText } from 'lucide-react';
 
 const MOCK_IMPORT_DATA = {
   spotify: [
@@ -99,6 +99,7 @@ function Sidebar({
   // Spotify Playlist URL Import states
   const [pastedPlaylistUrl, setPastedPlaylistUrl] = useState('');
   const [isFetchingUrl, setIsFetchingUrl] = useState(false);
+  const [fetchedPlaylistInfo, setFetchedPlaylistInfo] = useState(null);
 
   // Watch for Spotify Redirect parameters on mount/reload
   useEffect(() => {
@@ -142,68 +143,30 @@ function Sidebar({
     }
     
     const playlistId = match[1];
-    
-    if (!spotifyToken) {
-      localStorage.setItem('online_melodies_pending_url', url);
-      if (spotifyClientId) {
-        triggerSpotifyRedirect(spotifyClientId);
-      } else {
-        setSelectedSource('spotify');
-        setImportStep('spotify-config');
-      }
-      setIsFetchingUrl(false);
-      return;
-    }
-    
     setImportStep('connecting');
     setSelectedSource('spotify');
     
     try {
-      const response = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
-        headers: {
-          'Authorization': `Bearer ${spotifyToken}`
-        }
-      });
-      
-      if (response.status === 401) {
-        setSpotifyToken(null);
-        localStorage.setItem('online_melodies_pending_url', url);
-        setImportStep('select-source');
-        setErrorMessage('Spotify session expired. Re-authenticating...');
-        if (spotifyClientId) {
-          triggerSpotifyRedirect(spotifyClientId);
-        }
-        return;
-      }
+      const response = await fetch(`/api/spotify/playlist/${playlistId}`);
       
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        throw new Error(errData?.error?.message || `Failed to fetch playlist (status: ${response.status})`);
+        throw new Error(errData?.error || `Server failed to fetch playlist (status: ${response.status})`);
       }
       
       const data = await response.json();
-      const tracksData = data.tracks?.items || [];
-      const filtered = tracksData.filter(item => item && item.track).map(item => {
-        const track = item.track;
-        return {
-          query: `${track.name} ${track.artists?.[0]?.name || ''}`.trim(),
-          title: track.name,
-          artist: track.artists?.map(a => a.name).join(', ') || 'Unknown Artist'
-        };
-      });
       
-      if (filtered.length === 0) {
+      if (!data.tracks || data.tracks.length === 0) {
         throw new Error('No tracks found in this Spotify playlist.');
       }
       
-      const limitedTracks = filtered.slice(0, 20);
-      setParsedTracks(limitedTracks);
-      const playlistName = data.name || 'Imported Spotify Link';
-      setUploadedFileName(playlistName);
+      setFetchedPlaylistInfo({
+        name: data.name,
+        description: data.description,
+        tracks: data.tracks
+      });
       setPastedPlaylistUrl('');
-      
-      setSelectedSource('text');
-      handleStartSync(limitedTracks, playlistName);
+      setImportStep('preview-playlist');
     } catch (err) {
       console.error(err);
       setErrorMessage(`Error fetching Spotify playlist by URL: ${err.message}`);
@@ -252,11 +215,45 @@ function Sidebar({
     }
   };
 
-  const triggerSpotifyRedirect = (clientId) => {
-    const redirectUri = encodeURIComponent(window.location.origin + '/');
-    const scope = encodeURIComponent('playlist-read-private playlist-read-collaborative');
-    const authUrl = `https://accounts.spotify.com/authorize?client_id=${clientId}&response_type=token&redirect_uri=${redirectUri}&scope=${scope}`;
-    window.location.href = authUrl;
+// Helper to generate a random string for PKCE verifier
+const generateRandomString = (length) => {
+  let text = '';
+  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < length; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
+};
+
+// Helper to hash and base64-url encode PKCE code verifier
+const generateCodeChallenge = async (codeVerifier) => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(codeVerifier);
+  const digest = await window.crypto.subtle.digest('SHA-256', data);
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(digest)));
+  return base64
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+};
+
+  const triggerSpotifyRedirect = async (clientId) => {
+    try {
+      const redirectUri = window.location.origin + '/';
+      const scope = 'playlist-read-private playlist-read-collaborative';
+      
+      const verifier = generateRandomString(64);
+      localStorage.setItem('spotify_code_verifier', verifier);
+      
+      const challenge = await generateCodeChallenge(verifier);
+      
+      const authUrl = `https://accounts.spotify.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&code_challenge_method=S256&code_challenge=${challenge}`;
+      
+      window.location.href = authUrl;
+    } catch (err) {
+      console.error('Failed to trigger Spotify PKCE redirect:', err);
+      setErrorMessage('Security configuration error while setting up secure Spotify handshake.');
+    }
   };
 
   const handleSaveConfig = (e) => {
@@ -285,6 +282,7 @@ function Sidebar({
     setSyncProgress(0);
     setSyncingText('');
     setErrorMessage('');
+    setFetchedPlaylistInfo(null);
     setShowImportModal(true);
   };
 
@@ -296,8 +294,6 @@ function Sidebar({
       if (spotifyToken) {
         setImportStep('connecting');
         fetchRealSpotifyPlaylists(spotifyToken);
-      } else if (spotifyClientId) {
-        triggerSpotifyRedirect(spotifyClientId);
       } else {
         setImportStep('spotify-config');
       }
@@ -813,6 +809,14 @@ function Sidebar({
           }}>Playlists</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button 
+              onClick={handleOpenImport}
+              className="btn-icon" 
+              style={{ padding: '4px' }}
+              title="Import Playlist"
+            >
+              <Download size={15} />
+            </button>
+            <button 
               onClick={() => setShowCreateModal(true)}
               className="btn-icon" 
               style={{ padding: '4px' }}
@@ -1243,29 +1247,49 @@ function Sidebar({
                   />
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
-                  <button 
-                    type="button" 
-                    onClick={() => setImportStep('select-source')}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--text-secondary)',
-                      cursor: 'pointer',
-                      padding: '10px 16px',
-                      fontSize: '14px',
-                      fontWeight: '600'
-                    }}
-                  >
-                    Back
-                  </button>
-                  <button 
-                    type="submit" 
-                    className="btn-primary"
-                    style={{ padding: '8px 20px', fontSize: '14px' }}
-                  >
-                    Connect & Authorize
-                  </button>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                  {spotifyClientId && (
+                    <button 
+                      type="button"
+                      onClick={handleResetSpotify}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#f87171',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        textDecoration: 'underline',
+                        padding: '6px 0',
+                        fontWeight: '500'
+                      }}
+                    >
+                      Clear Client ID
+                    </button>
+                  )}
+                  <div style={{ display: 'flex', gap: '10px', marginLeft: 'auto' }}>
+                    <button 
+                      type="button" 
+                      onClick={() => setImportStep('select-source')}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        padding: '10px 16px',
+                        fontSize: '14px',
+                        fontWeight: '600'
+                      }}
+                    >
+                      Back
+                    </button>
+                    <button 
+                      type="submit" 
+                      className="btn-primary"
+                      style={{ padding: '8px 20px', fontSize: '14px' }}
+                    >
+                      Connect & Authorize
+                    </button>
+                  </div>
                 </div>
               </form>
             )}
@@ -1603,6 +1627,91 @@ function Sidebar({
               </>
             )}
 
+            {/* Step 3.5: Preview URL Playlist */}
+            {importStep === 'preview-playlist' && fetchedPlaylistInfo && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 style={{ fontSize: '20px', fontWeight: '800', margin: 0, color: '#fff' }}>Preview Playlist</h3>
+                  <button onClick={() => setShowImportModal(false)} className="btn-icon" style={{ padding: '4px' }}><X size={18} /></button>
+                </div>
+
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                  borderRadius: '12px',
+                  padding: '14px',
+                  marginBottom: '4px'
+                }}>
+                  <span style={{ fontSize: '16px', fontWeight: '800', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {fetchedPlaylistInfo.name}
+                  </span>
+                  <span 
+                    style={{ fontSize: '12.5px', color: 'var(--text-secondary)', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }} 
+                    dangerouslySetInnerHTML={{ __html: fetchedPlaylistInfo.description }} 
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '220px', overflowY: 'auto', paddingRight: '4px' }}>
+                  {fetchedPlaylistInfo.tracks.map((track, idx) => (
+                    <div 
+                      key={idx}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        background: 'rgba(255,255,255,0.02)',
+                        border: '1px solid rgba(255,255,255,0.04)'
+                      }}
+                    >
+                      <span style={{ fontSize: '13px', color: 'var(--text-muted)', width: '20px', textAlign: 'center' }}>
+                        {idx + 1}
+                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                        <span style={{ fontSize: '13.5px', fontWeight: '600', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {track.title}
+                        </span>
+                        <span style={{ fontSize: '11.5px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {track.artist}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                  <button 
+                    onClick={() => setImportStep('select-source')}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      padding: '10px 16px',
+                      fontSize: '14px',
+                      fontWeight: '600'
+                    }}
+                  >
+                    Back
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setSelectedSource('text'); // Reuse the track list sync engine
+                      handleStartSync(fetchedPlaylistInfo.tracks, fetchedPlaylistInfo.name);
+                    }}
+                    className="btn-primary"
+                    style={{ padding: '10px 24px', fontSize: '14px' }}
+                  >
+                    Import Playlist
+                  </button>
+                </div>
+              </>
+            )}
+
             {/* Step 4: Syncing */}
             {importStep === 'syncing' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '10px 0' }}>
@@ -1648,7 +1757,9 @@ function Sidebar({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <h3 style={{ fontSize: '20px', fontWeight: '800', margin: 0, color: '#fff' }}>Sync Complete!</h3>
                   <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', margin: 0 }}>
-                    Successfully imported {selectedPlaylists.length} playlists directly into your Online-Melodies library.
+                    {selectedSource === 'text' || fetchedPlaylistInfo
+                      ? 'Successfully imported the playlist directly into your Online-Melodies library.'
+                      : `Successfully imported ${selectedPlaylists.length} playlists directly into your Online-Melodies library.`}
                   </p>
                 </div>
                 <button 

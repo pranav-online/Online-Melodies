@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n \"server,client\" -c \"magenta,cyan\" \"node --watch api/index.js\" \"vite\"",
+    "dev": "concurrently -n \"server,client\" -c \"magenta,cyan\" \"node --env-file=.env --watch api/index.js\" \"vite\"",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
