@@ -580,6 +580,7 @@ function App() {
         activePlaylistId={activePlaylistId}
         setActivePlaylistId={setActivePlaylistId}
         createPlaylist={createPlaylist}
+        addSongToPlaylist={addSongToPlaylist}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />
