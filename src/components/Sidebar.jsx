@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Home, Search, Heart, Music, Sliders, Mic2, BarChart2, Plus, ListMusic, X, Download, Check } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Home, Search, Heart, Music, Sliders, Mic2, BarChart2, Plus, ListMusic, X, Download, Check, ClipboardList, FileText } from 'lucide-react';
 
 const MOCK_IMPORT_DATA = {
   spotify: [
@@ -55,18 +55,228 @@ const MOCK_IMPORT_DATA = {
   ]
 };
 
-function Sidebar({ currentTab, setCurrentTab, playlists, activePlaylistId, setActivePlaylistId, createPlaylist, addSongToPlaylist, isOpen, onClose }) {
+function Sidebar({
+  currentTab,
+  setCurrentTab,
+  playlists,
+  activePlaylistId,
+  setActivePlaylistId,
+  createPlaylist,
+  addSongToPlaylist,
+  spotifyToken,
+  setSpotifyToken,
+  autoOpenSpotifyImport,
+  setAutoOpenSpotifyImport,
+  pendingPlaylistUrl,
+  setPendingPlaylistUrl,
+  isOpen,
+  onClose
+}) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [newPlaylistDesc, setNewPlaylistDesc] = useState('');
 
   // Import Playlist wizard states
   const [showImportModal, setShowImportModal] = useState(false);
-  const [importStep, setImportStep] = useState('select-source'); // 'select-source' | 'connecting' | 'select-playlists' | 'syncing' | 'complete'
+  const [importStep, setImportStep] = useState('select-source'); // 'select-source' | 'spotify-config' | 'text-config' | 'connecting' | 'select-playlists' | 'syncing' | 'complete'
   const [selectedSource, setSelectedSource] = useState(null);
   const [selectedPlaylists, setSelectedPlaylists] = useState([]); // Array of indices
   const [syncProgress, setSyncProgress] = useState(0);
   const [syncingText, setSyncingText] = useState('');
+
+  // Real Spotify credentials & data
+  const [spotifyClientId, setSpotifyClientId] = useState(() => localStorage.getItem('online_melodies_spotify_client_id') || '');
+  const [tempClientId, setTempClientId] = useState(spotifyClientId);
+  const [spotifyPlaylists, setSpotifyPlaylists] = useState([]);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Text & CSV Import states
+  const [textImportMode, setTextImportMode] = useState('file'); // 'file' | 'paste'
+  const [pastedText, setPastedText] = useState('');
+  const [uploadedFileName, setUploadedFileName] = useState('');
+  const [parsedTracks, setParsedTracks] = useState([]);
+
+  // Spotify Playlist URL Import states
+  const [pastedPlaylistUrl, setPastedPlaylistUrl] = useState('');
+  const [isFetchingUrl, setIsFetchingUrl] = useState(false);
+
+  // Watch for Spotify Redirect parameters on mount/reload
+  useEffect(() => {
+    if (autoOpenSpotifyImport && spotifyToken) {
+      setSelectedSource('spotify');
+      setImportStep('connecting');
+      setShowImportModal(true);
+      setAutoOpenSpotifyImport(false);
+      
+      const pendingUrl = localStorage.getItem('online_melodies_pending_url');
+      if (pendingUrl) {
+        setPendingPlaylistUrl(pendingUrl);
+      } else {
+        fetchRealSpotifyPlaylists(spotifyToken);
+      }
+    }
+  }, [autoOpenSpotifyImport, spotifyToken]);
+
+  // Watch for pending URL to resume fetching after redirect loop
+  useEffect(() => {
+    if (pendingPlaylistUrl && spotifyToken) {
+      const url = pendingPlaylistUrl;
+      setPendingPlaylistUrl(null);
+      localStorage.removeItem('online_melodies_pending_url');
+      handleUrlImport(url);
+    }
+  }, [pendingPlaylistUrl, spotifyToken]);
+
+  const handleUrlImport = async (urlToParse) => {
+    const url = urlToParse || pastedPlaylistUrl;
+    if (!url) return;
+    
+    setErrorMessage('');
+    setIsFetchingUrl(true);
+    
+    const match = url.match(/playlist\/([a-zA-Z0-9]{22})/);
+    if (!match) {
+      setErrorMessage('Invalid Spotify playlist URL. Please check the link.');
+      setIsFetchingUrl(false);
+      return;
+    }
+    
+    const playlistId = match[1];
+    
+    if (!spotifyToken) {
+      localStorage.setItem('online_melodies_pending_url', url);
+      if (spotifyClientId) {
+        triggerSpotifyRedirect(spotifyClientId);
+      } else {
+        setSelectedSource('spotify');
+        setImportStep('spotify-config');
+      }
+      setIsFetchingUrl(false);
+      return;
+    }
+    
+    setImportStep('connecting');
+    setSelectedSource('spotify');
+    
+    try {
+      const response = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
+        headers: {
+          'Authorization': `Bearer ${spotifyToken}`
+        }
+      });
+      
+      if (response.status === 401) {
+        setSpotifyToken(null);
+        localStorage.setItem('online_melodies_pending_url', url);
+        setImportStep('select-source');
+        setErrorMessage('Spotify session expired. Re-authenticating...');
+        if (spotifyClientId) {
+          triggerSpotifyRedirect(spotifyClientId);
+        }
+        return;
+      }
+      
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData?.error?.message || `Failed to fetch playlist (status: ${response.status})`);
+      }
+      
+      const data = await response.json();
+      const tracksData = data.tracks?.items || [];
+      const filtered = tracksData.filter(item => item && item.track).map(item => {
+        const track = item.track;
+        return {
+          query: `${track.name} ${track.artists?.[0]?.name || ''}`.trim(),
+          title: track.name,
+          artist: track.artists?.map(a => a.name).join(', ') || 'Unknown Artist'
+        };
+      });
+      
+      if (filtered.length === 0) {
+        throw new Error('No tracks found in this Spotify playlist.');
+      }
+      
+      const limitedTracks = filtered.slice(0, 20);
+      setParsedTracks(limitedTracks);
+      const playlistName = data.name || 'Imported Spotify Link';
+      setUploadedFileName(playlistName);
+      setPastedPlaylistUrl('');
+      
+      setSelectedSource('text');
+      handleStartSync(limitedTracks, playlistName);
+    } catch (err) {
+      console.error(err);
+      setErrorMessage(`Error fetching Spotify playlist by URL: ${err.message}`);
+      setImportStep('select-source');
+    } finally {
+      setIsFetchingUrl(false);
+    }
+  };
+
+  const fetchRealSpotifyPlaylists = async (token) => {
+    setErrorMessage('');
+    try {
+      const response = await fetch('https://api.spotify.com/v1/me/playlists?limit=50', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.status === 401) {
+        setSpotifyToken(null);
+        setImportStep('select-source');
+        setErrorMessage('Spotify session expired. Please connect again.');
+        return;
+      }
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData?.error?.message || `Failed to fetch playlists (status: ${response.status})`);
+      }
+      const data = await response.json();
+      const items = data.items || [];
+      const formatted = items.map(p => ({
+        id: p.id,
+        name: p.name,
+        description: p.description || 'No description provided.',
+        tracksCount: p.tracks?.total || 0,
+        images: p.images
+      }));
+      setSpotifyPlaylists(formatted);
+      setImportStep('select-playlists');
+      // Auto-check all playlists by default
+      const defaultIndices = formatted.map((_, i) => i);
+      setSelectedPlaylists(defaultIndices);
+    } catch (err) {
+      console.error(err);
+      setErrorMessage(`Error fetching Spotify playlists: ${err.message}`);
+      setImportStep('select-source');
+    }
+  };
+
+  const triggerSpotifyRedirect = (clientId) => {
+    const redirectUri = encodeURIComponent(window.location.origin + '/');
+    const scope = encodeURIComponent('playlist-read-private playlist-read-collaborative');
+    const authUrl = `https://accounts.spotify.com/authorize?client_id=${clientId}&response_type=token&redirect_uri=${redirectUri}&scope=${scope}`;
+    window.location.href = authUrl;
+  };
+
+  const handleSaveConfig = (e) => {
+    e.preventDefault();
+    if (!tempClientId.trim()) return;
+    const cleanId = tempClientId.trim();
+    localStorage.setItem('online_melodies_spotify_client_id', cleanId);
+    setSpotifyClientId(cleanId);
+    triggerSpotifyRedirect(cleanId);
+  };
+
+  const handleResetSpotify = () => {
+    localStorage.removeItem('online_melodies_spotify_client_id');
+    setSpotifyClientId('');
+    setTempClientId('');
+    setSpotifyToken(null);
+    setSpotifyPlaylists([]);
+    setSelectedPlaylists([]);
+    setImportStep('select-source');
+  };
 
   const handleOpenImport = () => {
     setImportStep('select-source');
@@ -74,20 +284,173 @@ function Sidebar({ currentTab, setCurrentTab, playlists, activePlaylistId, setAc
     setSelectedPlaylists([]);
     setSyncProgress(0);
     setSyncingText('');
+    setErrorMessage('');
     setShowImportModal(true);
   };
 
   const handleSelectSource = (source) => {
     setSelectedSource(source);
-    setImportStep('connecting');
+    setErrorMessage('');
     
-    // Simulate connection lag (1.5 seconds)
-    setTimeout(() => {
-      setImportStep('select-playlists');
-      // Auto-check all playlists by default
-      const defaultIndices = MOCK_IMPORT_DATA[source].map((_, i) => i);
-      setSelectedPlaylists(defaultIndices);
-    }, 1500);
+    if (source === 'spotify') {
+      if (spotifyToken) {
+        setImportStep('connecting');
+        fetchRealSpotifyPlaylists(spotifyToken);
+      } else if (spotifyClientId) {
+        triggerSpotifyRedirect(spotifyClientId);
+      } else {
+        setImportStep('spotify-config');
+      }
+    } else if (source === 'text') {
+      setPastedText('');
+      setUploadedFileName('');
+      setParsedTracks([]);
+      setImportStep('text-config');
+    } else {
+      setImportStep('connecting');
+      setTimeout(() => {
+        setImportStep('select-playlists');
+        const defaultIndices = (MOCK_IMPORT_DATA[source] || []).map((_, i) => i);
+        setSelectedPlaylists(defaultIndices);
+      }, 1500);
+    }
+  };
+
+  const parseTextPlaylist = (rawText) => {
+    const lines = rawText.split('\n');
+    const tracks = [];
+    let isCsv = false;
+    let headers = null;
+    
+    // Check if it looks like a CSV (contains commas and multiple lines)
+    const firstLine = lines[0] || '';
+    if (firstLine.includes(',') && lines.length > 1) {
+      isCsv = true;
+      const cols = firstLine.split(',').map(c => c.trim().toLowerCase());
+      const titleIdx = cols.findIndex(c => c.includes('title') || c.includes('track') || c.includes('name'));
+      const artistIdx = cols.findIndex(c => c.includes('artist') || c.includes('singer') || c.includes('band'));
+      if (titleIdx !== -1 || artistIdx !== -1) {
+        headers = { titleIdx, artistIdx };
+      }
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      if (isCsv && headers && i === 0) {
+        continue; // skip header line
+      }
+      
+      if (isCsv && headers) {
+        const parts = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(p => p.replace(/^"|"$/g, '').trim());
+        const title = headers.titleIdx !== -1 && headers.titleIdx < parts.length ? parts[headers.titleIdx] : '';
+        const artist = headers.artistIdx !== -1 && headers.artistIdx < parts.length ? parts[headers.artistIdx] : '';
+        if (title || artist) {
+          tracks.push({
+            query: `${title} ${artist}`.trim(),
+            title: title || 'Unknown Title',
+            artist: artist || 'Unknown Artist'
+          });
+          continue;
+        }
+      }
+
+      if (line.includes(',')) {
+        const parts = line.split(',');
+        if (parts.length >= 2) {
+          const title = parts[0].trim();
+          const artist = parts[1].trim();
+          tracks.push({
+            query: `${title} ${artist}`,
+            title,
+            artist
+          });
+          continue;
+        }
+      }
+
+      if (line.includes(' - ')) {
+        const parts = line.split(' - ');
+        const title = parts[0].trim();
+        const artist = parts[1].trim();
+        tracks.push({
+          query: line,
+          title,
+          artist
+        });
+      } else if (line.includes(' by ')) {
+        const parts = line.split(' by ');
+        const title = parts[0].trim();
+        const artist = parts[1].trim();
+        tracks.push({
+          query: line,
+          title,
+          artist
+        });
+      } else {
+        tracks.push({
+          query: line,
+          title: line,
+          artist: 'Unknown Artist'
+        });
+      }
+    }
+    return tracks;
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    setUploadedFileName(file.name.replace(/\.[^/.]+$/, ""));
+    setErrorMessage('');
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target.result;
+      const tracks = parseTextPlaylist(text);
+      setParsedTracks(tracks);
+    };
+    reader.onerror = () => {
+      setErrorMessage('Failed to read file.');
+    };
+    reader.readAsText(file);
+  };
+
+  const handleTextImportSubmit = (e) => {
+    e.preventDefault();
+    setErrorMessage('');
+    
+    let tracks = [];
+    let playlistName = 'Imported Text Playlist';
+    
+    if (textImportMode === 'file') {
+      if (parsedTracks.length === 0) {
+        setErrorMessage('Please upload a valid text or CSV file first.');
+        return;
+      }
+      tracks = parsedTracks;
+      playlistName = uploadedFileName || 'Imported File Playlist';
+    } else {
+      if (!pastedText.trim()) {
+        setErrorMessage('Please paste some songs in the text box.');
+        return;
+      }
+      tracks = parseTextPlaylist(pastedText);
+      playlistName = 'Imported List Playlist';
+    }
+    
+    if (tracks.length === 0) {
+      setErrorMessage('No tracks found to parse. Please check your format.');
+      return;
+    }
+    
+    const limitedTracks = tracks.slice(0, 20);
+    setParsedTracks(limitedTracks);
+    setUploadedFileName(playlistName);
+    
+    handleStartSync(limitedTracks, playlistName);
   };
 
   const handleTogglePlaylistSelection = (index) => {
@@ -96,57 +459,168 @@ function Sidebar({ currentTab, setCurrentTab, playlists, activePlaylistId, setAc
     );
   };
 
-  const handleStartSync = () => {
-    if (selectedPlaylists.length === 0) return;
+  const handleStartSync = async (optionalTracks = null, optionalName = null) => {
+    const activeSource = selectedSource;
+    const tracksToSync = optionalTracks || parsedTracks;
+    const playlistName = optionalName || uploadedFileName || 'Imported Playlist';
+
+    if (activeSource !== 'text' && selectedPlaylists.length === 0) return;
     setImportStep('syncing');
     setSyncProgress(0);
-    
-    const playlistsToImport = selectedPlaylists.map(idx => MOCK_IMPORT_DATA[selectedSource][idx]);
-    let currentPlaylistIndex = 0;
-    let currentSongIndex = 0;
-    
-    const totalPlaylists = playlistsToImport.length;
-    const totalSongs = playlistsToImport.reduce((sum, p) => sum + p.songs.length, 0);
-    let songsProcessed = 0;
+    setErrorMessage('');
 
-    const runSyncTick = () => {
-      if (currentPlaylistIndex >= totalPlaylists) {
-        setSyncProgress(100);
-        setSyncingText("All playlists successfully imported!");
-        setTimeout(() => {
-          setImportStep('complete');
-        }, 500);
-        return;
-      }
-
-      const playlist = playlistsToImport[currentPlaylistIndex];
-      const song = playlist.songs[currentSongIndex];
-      
-      setSyncingText(`Importing "${playlist.name}" - Resolving: ${song.title}...`);
-
-      setTimeout(() => {
-        songsProcessed++;
-        const progress = Math.round((songsProcessed / totalSongs) * 100);
-        setSyncProgress(progress);
-
-        currentSongIndex++;
-        if (currentSongIndex >= playlist.songs.length) {
-          // Finished this playlist, create it in parent app!
-          const playlistId = createPlaylist(playlist.name, playlist.description);
-          // Add all songs
-          playlist.songs.forEach(s => {
-            addSongToPlaylist(playlistId, s);
+    try {
+      if (activeSource === 'spotify') {
+        const playlistsToImport = selectedPlaylists.map(idx => spotifyPlaylists[idx]);
+        
+        let totalTracksCount = 0;
+        const playlistTracks = {};
+        
+        setSyncingText('Fetching tracks from Spotify playlists...');
+        
+        for (const playlist of playlistsToImport) {
+          const res = await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks?limit=20`, {
+            headers: {
+              'Authorization': `Bearer ${spotifyToken}`
+            }
           });
+          if (res.status === 401) {
+            setSpotifyToken(null);
+            throw new Error('Spotify session expired. Please connect again.');
+          }
+          if (!res.ok) {
+            throw new Error(`Failed to fetch tracks for playlist "${playlist.name}"`);
+          }
+          const tracksData = await res.json();
+          const items = (tracksData.items || []).filter(item => item && item.track);
+          playlistTracks[playlist.id] = items;
+          totalTracksCount += items.length;
+        }
+
+        if (totalTracksCount === 0) {
+          setSyncProgress(100);
+          setSyncingText('No tracks found to import.');
+          setImportStep('complete');
+          return;
+        }
+
+        let tracksProcessed = 0;
+        
+        for (const playlist of playlistsToImport) {
+          const items = playlistTracks[playlist.id] || [];
+          if (items.length === 0) continue;
           
-          currentPlaylistIndex++;
-          currentSongIndex = 0;
+          const melodiesPlaylistId = createPlaylist(playlist.name, playlist.description);
+          
+          for (const item of items) {
+            const track = item.track;
+            const trackName = track.name;
+            const artistName = track.artists?.map(a => a.name).join(', ') || 'Unknown Artist';
+            const searchQuery = `${trackName} ${track.artists?.[0]?.name || ''}`;
+            
+            setSyncingText(`Importing "${playlist.name}" - Resolving: ${trackName} by ${artistName}...`);
+            
+            try {
+              const searchRes = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
+              if (searchRes.ok) {
+                const results = await searchRes.json();
+                if (results && results.length > 0) {
+                  const match = results[0];
+                  const song = {
+                    id: match.id,
+                    title: trackName,
+                    channelName: artistName,
+                    duration: match.duration,
+                    thumbnail: match.thumbnail
+                  };
+                  addSongToPlaylist(melodiesPlaylistId, song);
+                }
+              }
+            } catch (err) {
+              console.error(`Search failed for track: ${searchQuery}`, err);
+            }
+            
+            tracksProcessed++;
+            setSyncProgress(Math.round((tracksProcessed / totalTracksCount) * 100));
+            await new Promise(resolve => setTimeout(resolve, 350));
+          }
         }
         
-        runSyncTick();
-      }, 350);
-    };
+        setSyncProgress(100);
+        setSyncingText('All playlists successfully imported!');
+        setImportStep('complete');
+        
+      } else if (activeSource === 'text') {
+        const totalTracks = tracksToSync.length;
+        if (totalTracks === 0) {
+          setSyncProgress(100);
+          setSyncingText('No tracks found to import.');
+          setImportStep('complete');
+          return;
+        }
 
-    runSyncTick();
+        const melodiesPlaylistId = createPlaylist(playlistName, 'Imported from a local file or text list.');
+        
+        let tracksProcessed = 0;
+        for (const track of tracksToSync) {
+          setSyncingText(`Resolving track: ${track.title} by ${track.artist}...`);
+          
+          try {
+            const searchRes = await fetch(`/api/search?q=${encodeURIComponent(track.query)}`);
+            if (searchRes.ok) {
+              const results = await searchRes.json();
+              if (results && results.length > 0) {
+                const match = results[0];
+                const song = {
+                  id: match.id,
+                  title: track.title,
+                  channelName: track.artist,
+                  duration: match.duration,
+                  thumbnail: match.thumbnail
+                };
+                addSongToPlaylist(melodiesPlaylistId, song);
+              }
+            }
+          } catch (err) {
+            console.error(`Search failed for track: ${track.query}`, err);
+          }
+          
+          tracksProcessed++;
+          setSyncProgress(Math.round((tracksProcessed / totalTracks) * 100));
+          await new Promise(resolve => setTimeout(resolve, 350));
+        }
+        
+        setSyncProgress(100);
+        setSyncingText('Playlist successfully imported!');
+        setImportStep('complete');
+      } else {
+        const playlistsToImport = selectedPlaylists.map(idx => MOCK_IMPORT_DATA[activeSource][idx]);
+        const totalSongs = playlistsToImport.reduce((sum, p) => sum + p.songs.length, 0);
+        let songsProcessed = 0;
+        
+        for (const playlist of playlistsToImport) {
+          const melodiesPlaylistId = createPlaylist(playlist.name, playlist.description);
+          
+          for (const song of playlist.songs) {
+            setSyncingText(`Importing "${playlist.name}" - Resolving: ${song.title}...`);
+            
+            await new Promise(resolve => setTimeout(resolve, 350));
+            
+            addSongToPlaylist(melodiesPlaylistId, song);
+            songsProcessed++;
+            setSyncProgress(Math.round((songsProcessed / totalSongs) * 100));
+          }
+        }
+        
+        setSyncProgress(100);
+        setSyncingText('All playlists successfully imported!');
+        setImportStep('complete');
+      }
+    } catch (err) {
+      console.error('Sync Error:', err);
+      setErrorMessage(err.message || 'An error occurred during sync.');
+      setImportStep('select-source');
+    }
   };
 
   const handleFinishImport = () => {
@@ -549,8 +1023,71 @@ function Sidebar({ currentTab, setCurrentTab, playlists, activePlaylistId, setAc
                   <h3 style={{ fontSize: '20px', fontWeight: '800', margin: 0, color: '#fff' }}>Import Playlist</h3>
                   <button onClick={() => setShowImportModal(false)} className="btn-icon" style={{ padding: '4px' }}><X size={18} /></button>
                 </div>
-                <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', margin: 0 }}>
-                  Select the external music service you want to import your playlists from:
+                {errorMessage && (
+                  <div style={{
+                    padding: '10px 14px',
+                    borderRadius: '10px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    color: '#f87171',
+                    fontSize: '13px',
+                    lineHeight: '1.4'
+                  }}>
+                    {errorMessage}
+                  </div>
+                )}
+
+                {/* Spotify Link Paste Input */}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  marginTop: '4px'
+                }}>
+                  <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text-secondary)' }}>
+                    Paste Spotify Playlist Link:
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input 
+                      type="text" 
+                      value={pastedPlaylistUrl}
+                      onChange={e => setPastedPlaylistUrl(e.target.value)}
+                      placeholder="https://open.spotify.com/playlist/..."
+                      style={{
+                        flex: 1,
+                        background: 'rgba(255,255,255,0.05)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '8px',
+                        color: '#fff',
+                        padding: '8px 12px',
+                        outline: 'none',
+                        fontSize: '13px',
+                        fontFamily: 'var(--font-primary)'
+                      }}
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => handleUrlImport()}
+                      disabled={!pastedPlaylistUrl.trim() || isFetchingUrl}
+                      className="btn-primary"
+                      style={{
+                        padding: '8px 16px',
+                        fontSize: '13px',
+                        borderRadius: '8px',
+                        opacity: (!pastedPlaylistUrl.trim() || isFetchingUrl) ? 0.5 : 1
+                      }}
+                    >
+                      {isFetchingUrl ? 'Fetching...' : 'Import'}
+                    </button>
+                  </div>
+                </div>
+
+                <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                  Or select the external music service to browse your library:
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <button 
@@ -633,8 +1170,266 @@ function Sidebar({ currentTab, setCurrentTab, playlists, activePlaylistId, setAc
                     </div>
                     <span>Amazon Music Sync</span>
                   </button>
+
+                  <button 
+                    onClick={() => handleSelectSource('text')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '14px',
+                      padding: '16px',
+                      borderRadius: '12px',
+                      border: '1px solid rgba(255,255,255,0.06)',
+                      background: 'rgba(139, 92, 246, 0.04)',
+                      color: '#fff',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      fontFamily: 'var(--font-primary)',
+                      fontSize: '15px',
+                      fontWeight: '700',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseOver={(e) => { e.currentTarget.style.borderColor = '#8b5cf6'; e.currentTarget.style.boxShadow = '0 0 15px rgba(139,92,246,0.15)'; }}
+                    onMouseOut={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.boxShadow = 'none'; }}
+                  >
+                    <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: '#8b5cf6', display: 'flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center' }}>
+                      <ClipboardList size={15} color="#fff" />
+                    </div>
+                    <span>Text / CSV File Sync</span>
+                  </button>
                 </div>
               </>
+            )}
+
+            {/* Step 1.5: Spotify Configuration Form */}
+            {importStep === 'spotify-config' && (
+              <form onSubmit={handleSaveConfig} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 style={{ fontSize: '20px', fontWeight: '800', margin: 0, color: '#fff' }}>Spotify Setup</h3>
+                  <button type="button" onClick={() => setShowImportModal(false)} className="btn-icon" style={{ padding: '4px' }}><X size={18} /></button>
+                </div>
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.4' }}>
+                  To securely fetch your real Spotify playlists, you need to create a Spotify developer client ID.
+                </p>
+                <div style={{
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  fontSize: '12.5px',
+                  color: 'var(--text-secondary)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px'
+                }}>
+                  <strong style={{ color: '#fff' }}>Quick Instructions:</strong>
+                  <ol style={{ paddingLeft: '18px', margin: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <li>Go to the <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener noreferrer" style={{ color: '#1DB954', textDecoration: 'underline' }}>Spotify Developer Dashboard</a> and log in.</li>
+                    <li>Click <strong>Create App</strong>. Set App Name/Description, and add the Redirect URI: <code style={{ color: '#fff', background: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px' }}>{window.location.origin + '/'}</code></li>
+                    <li>Go to settings of your created app, copy the <strong>Client ID</strong>, and paste it below.</li>
+                  </ol>
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600' }}>Spotify Client ID</label>
+                  <input 
+                    type="text" 
+                    value={tempClientId}
+                    onChange={e => setTempClientId(e.target.value)}
+                    placeholder="Enter your 32-character Client ID" 
+                    required
+                    style={{
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '10px',
+                      color: '#fff',
+                      padding: '10px 14px',
+                      outline: 'none',
+                      fontSize: '14px',
+                      fontFamily: 'var(--font-primary)'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
+                  <button 
+                    type="button" 
+                    onClick={() => setImportStep('select-source')}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      padding: '10px 16px',
+                      fontSize: '14px',
+                      fontWeight: '600'
+                    }}
+                  >
+                    Back
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="btn-primary"
+                    style={{ padding: '8px 20px', fontSize: '14px' }}
+                  >
+                    Connect & Authorize
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Step 1.7: Text / CSV Configuration Form */}
+            {importStep === 'text-config' && (
+              <form onSubmit={handleTextImportSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 style={{ fontSize: '20px', fontWeight: '800', margin: 0, color: '#fff' }}>Text / CSV Import</h3>
+                  <button type="button" onClick={() => setShowImportModal(false)} className="btn-icon" style={{ padding: '4px' }}><X size={18} /></button>
+                </div>
+                {errorMessage && (
+                  <div style={{
+                    padding: '10px 14px',
+                    borderRadius: '10px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    color: '#f87171',
+                    fontSize: '13px',
+                    lineHeight: '1.4'
+                  }}>
+                    {errorMessage}
+                  </div>
+                )}
+                
+                <div style={{
+                  display: 'flex',
+                  background: 'rgba(255,255,255,0.04)',
+                  padding: '4px',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(255,255,255,0.06)'
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => setTextImportMode('file')}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: textImportMode === 'file' ? 'rgba(255,255,255,0.08)' : 'transparent',
+                      color: textImportMode === 'file' ? '#fff' : 'var(--text-secondary)',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    Upload File
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTextImportMode('paste')}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: textImportMode === 'paste' ? 'rgba(255,255,255,0.08)' : 'transparent',
+                      color: textImportMode === 'paste' ? '#fff' : 'var(--text-secondary)',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    Paste List
+                  </button>
+                </div>
+
+                {textImportMode === 'file' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '24px',
+                      border: '2px dashed rgba(255, 255, 255, 0.15)',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseOver={(e) => { e.currentTarget.style.borderColor = 'var(--vibe-accent)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                    onMouseOut={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'; e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
+                    >
+                      <FileText size={32} color="var(--text-secondary)" style={{ marginBottom: '10px' }} />
+                      <span style={{ fontSize: '14px', fontWeight: '600', color: '#fff', textAlign: 'center' }}>
+                        {uploadedFileName ? `Selected: ${uploadedFileName}` : 'Choose .txt or .csv File'}
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', textAlign: 'center' }}>
+                        {parsedTracks.length > 0 ? `Parsed ${parsedTracks.length} tracks (First 20 will import)` : 'Supports comma-separated or dashed listings'}
+                      </span>
+                      <input 
+                        type="file" 
+                        accept=".txt,.csv" 
+                        onChange={handleFileUpload} 
+                        style={{ display: 'none' }} 
+                      />
+                    </label>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <textarea 
+                      value={pastedText}
+                      onChange={e => setPastedText(e.target.value)}
+                      placeholder="Paste your tracklist here (one song per line):&#13;Blinding Lights - The Weeknd&#13;Flowers - Miley Cyrus&#13;Shape of You" 
+                      rows={6}
+                      style={{
+                        background: 'rgba(255,255,255,0.05)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '10px',
+                        color: '#fff',
+                        padding: '12px 14px',
+                        outline: 'none',
+                        fontSize: '13.5px',
+                        fontFamily: 'var(--font-primary)',
+                        resize: 'none',
+                        width: '100%',
+                        lineHeight: '1.4'
+                      }}
+                    />
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
+                  <button 
+                    type="button" 
+                    onClick={() => setImportStep('select-source')}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      padding: '10px 16px',
+                      fontSize: '14px',
+                      fontWeight: '600'
+                    }}
+                  >
+                    Back
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="btn-primary"
+                    disabled={textImportMode === 'file' ? !uploadedFileName : !pastedText.trim()}
+                    style={{
+                      padding: '8px 20px',
+                      fontSize: '14px',
+                      opacity: (textImportMode === 'file' ? !uploadedFileName : !pastedText.trim()) ? 0.5 : 1
+                    }}
+                  >
+                    Parse & Import
+                  </button>
+                </div>
+              </form>
             )}
 
             {/* Step 2: Connecting */}
@@ -653,7 +1448,7 @@ function Sidebar({ currentTab, setCurrentTab, playlists, activePlaylistId, setAc
                     Connecting to {selectedSource === 'spotify' ? 'Spotify' : selectedSource === 'apple' ? 'Apple Music' : 'Amazon Music'}...
                   </h3>
                   <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>
-                    Initializing mock secure OAuth handshake & fetching library metadata...
+                    {selectedSource === 'spotify' ? 'Fetching your library and public playlists from Spotify API...' : 'Initializing mock secure OAuth handshake & fetching library metadata...'}
                   </p>
                 </div>
               </div>
@@ -666,72 +1461,152 @@ function Sidebar({ currentTab, setCurrentTab, playlists, activePlaylistId, setAc
                   <h3 style={{ fontSize: '20px', fontWeight: '800', margin: 0, color: '#fff' }}>Select Playlists</h3>
                   <button onClick={() => setShowImportModal(false)} className="btn-icon" style={{ padding: '4px' }}><X size={18} /></button>
                 </div>
+
+                {/* Spotify Link Paste Input (Alternative) */}
+                {selectedSource === 'spotify' && (
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                    borderRadius: '12px',
+                    padding: '12px 14px',
+                    marginBottom: '4px'
+                  }}>
+                    <label style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text-secondary)' }}>
+                      Or paste a public Spotify Playlist Link:
+                    </label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input 
+                        type="text" 
+                        value={pastedPlaylistUrl}
+                        onChange={e => setPastedPlaylistUrl(e.target.value)}
+                        placeholder="https://open.spotify.com/playlist/..."
+                        style={{
+                          flex: 1,
+                          background: 'rgba(255,255,255,0.05)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '8px',
+                          color: '#fff',
+                          padding: '8px 12px',
+                          outline: 'none',
+                          fontSize: '13px',
+                          fontFamily: 'var(--font-primary)'
+                        }}
+                      />
+                      <button 
+                        type="button"
+                        onClick={() => handleUrlImport()}
+                        disabled={!pastedPlaylistUrl.trim() || isFetchingUrl}
+                        className="btn-primary"
+                        style={{
+                          padding: '8px 16px',
+                          fontSize: '13px',
+                          borderRadius: '8px',
+                          opacity: (!pastedPlaylistUrl.trim() || isFetchingUrl) ? 0.5 : 1
+                        }}
+                      >
+                        {isFetchingUrl ? 'Fetching...' : 'Import'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', margin: 0 }}>
                   We discovered the following playlists on your account. Select which ones to import:
                 </p>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '220px', overflowY: 'auto', paddingRight: '4px' }}>
-                  {MOCK_IMPORT_DATA[selectedSource].map((playlist, idx) => {
-                    const isChecked = selectedPlaylists.includes(idx);
-                    return (
-                      <div 
-                        key={idx}
-                        onClick={() => handleTogglePlaylistSelection(idx)}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '12px 14px',
-                          borderRadius: '10px',
-                          background: 'rgba(255,255,255,0.03)',
-                          border: isChecked ? '1px solid var(--vibe-accent)' : '1px solid rgba(255,255,255,0.06)',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s'
-                        }}
-                      >
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0, flex: 1, paddingRight: '12px' }}>
-                          <span style={{ fontSize: '14.5px', fontWeight: '700', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{playlist.name}</span>
-                          <span style={{ fontSize: '12px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{playlist.songs.length} songs • {playlist.description}</span>
-                        </div>
-                        <input 
-                          type="checkbox" 
-                          checked={isChecked}
-                          onChange={() => {}} // handled by div click
+                  {selectedSource === 'spotify' && spotifyPlaylists.length === 0 ? (
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '14px', fontStyle: 'italic', textAlign: 'center', padding: '24px 0' }}>
+                      No playlists found in your Spotify account.
+                    </div>
+                  ) : (
+                    (selectedSource === 'spotify' ? spotifyPlaylists : MOCK_IMPORT_DATA[selectedSource]).map((playlist, idx) => {
+                      const isChecked = selectedPlaylists.includes(idx);
+                      return (
+                        <div 
+                          key={playlist.id || idx}
+                          onClick={() => handleTogglePlaylistSelection(idx)}
                           style={{
-                            width: '18px',
-                            height: '18px',
-                            accentColor: 'var(--vibe-accent)',
-                            cursor: 'pointer'
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '12px 14px',
+                            borderRadius: '10px',
+                            background: 'rgba(255,255,255,0.03)',
+                            border: isChecked ? '1px solid var(--vibe-accent)' : '1px solid rgba(255,255,255,0.06)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s'
                           }}
-                        />
-                      </div>
-                    );
-                  })}
+                        >
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0, flex: 1, paddingRight: '12px' }}>
+                            <span style={{ fontSize: '14.5px', fontWeight: '700', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{playlist.name}</span>
+                            <span style={{ fontSize: '12px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {selectedSource === 'spotify' ? `${playlist.tracksCount} tracks` : `${playlist.songs.length} songs`} • {playlist.description}
+                            </span>
+                          </div>
+                          <input 
+                            type="checkbox" 
+                            checked={isChecked}
+                            onChange={() => {}} // handled by div click
+                            style={{
+                              width: '18px',
+                              height: '18px',
+                              accentColor: 'var(--vibe-accent)',
+                              cursor: 'pointer'
+                            }}
+                          />
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                  <button 
-                    onClick={() => setImportStep('select-source')}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--text-secondary)',
-                      cursor: 'pointer',
-                      padding: '10px 16px',
-                      fontSize: '14px',
-                      fontWeight: '600'
-                    }}
-                  >
-                    Back
-                  </button>
-                  <button 
-                    onClick={handleStartSync}
-                    className="btn-primary"
-                    disabled={selectedPlaylists.length === 0}
-                    style={{ padding: '10px 24px', fontSize: '14px', opacity: selectedPlaylists.length === 0 ? 0.5 : 1 }}
-                  >
-                    Import Selected ({selectedPlaylists.length})
-                  </button>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+                  {selectedSource === 'spotify' && (
+                    <button 
+                      type="button"
+                      onClick={handleResetSpotify}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#f87171',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        textDecoration: 'underline',
+                        padding: '6px 0',
+                        fontWeight: '500'
+                      }}
+                    >
+                      Disconnect Spotify
+                    </button>
+                  )}
+                  <div style={{ display: 'flex', gap: '10px', marginLeft: 'auto' }}>
+                    <button 
+                      onClick={() => setImportStep('select-source')}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        padding: '10px 16px',
+                        fontSize: '14px',
+                        fontWeight: '600'
+                      }}
+                    >
+                      Back
+                    </button>
+                    <button 
+                      onClick={handleStartSync}
+                      className="btn-primary"
+                      disabled={selectedPlaylists.length === 0}
+                      style={{ padding: '10px 24px', fontSize: '14px', opacity: selectedPlaylists.length === 0 ? 0.5 : 1 }}
+                    >
+                      Import Selected ({selectedPlaylists.length})
+                    </button>
+                  </div>
                 </div>
               </>
             )}

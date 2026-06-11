@@ -36,6 +36,11 @@ import { Menu } from 'lucide-react';
 function App() {
   const [showSplash, setShowSplash] = useState(true);
 
+  // Spotify Authentication states
+  const [spotifyToken, setSpotifyToken] = useState(null);
+  const [autoOpenSpotifyImport, setAutoOpenSpotifyImport] = useState(false);
+  const [pendingPlaylistUrl, setPendingPlaylistUrl] = useState(null);
+
   // Navigation & Active View Tab
   const [currentTab, setCurrentTab] = useState('home');
   const [activePlaylistId, setActivePlaylistId] = useState(null);
@@ -106,6 +111,28 @@ function App() {
   useEffect(() => {
     localStorage.setItem('online_melodies_recent', JSON.stringify(recentlyPlayed));
   }, [recentlyPlayed]);
+
+  // Parse Spotify access token from URL hash on redirect
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash) {
+      const params = new URLSearchParams(hash.substring(1));
+      const token = params.get('access_token');
+      if (token) {
+        setSpotifyToken(token);
+        setAutoOpenSpotifyImport(true);
+        
+        // Resume pending URL import if exists
+        const pendingUrl = localStorage.getItem('online_melodies_pending_url');
+        if (pendingUrl) {
+          setPendingPlaylistUrl(pendingUrl);
+        }
+        
+        // Clean up hash from URL to keep address bar clean
+        window.history.replaceState(null, null, window.location.pathname);
+      }
+    }
+  }, []);
 
   // Load YouTube Player API
   useEffect(() => {
@@ -581,6 +608,12 @@ function App() {
         setActivePlaylistId={setActivePlaylistId}
         createPlaylist={createPlaylist}
         addSongToPlaylist={addSongToPlaylist}
+        spotifyToken={spotifyToken}
+        setSpotifyToken={setSpotifyToken}
+        autoOpenSpotifyImport={autoOpenSpotifyImport}
+        setAutoOpenSpotifyImport={setAutoOpenSpotifyImport}
+        pendingPlaylistUrl={pendingPlaylistUrl}
+        setPendingPlaylistUrl={setPendingPlaylistUrl}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />
