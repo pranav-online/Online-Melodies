@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Home, Search, Heart, Music, Sliders, Mic2, BarChart2, Plus, ListMusic, X, Download, Check, ClipboardList, FileText } from 'lucide-react';
+import { Home, Search, Heart, Music, Sliders, Mic2, BarChart2, Plus, ListMusic, X, Check, ClipboardList, FileText } from 'lucide-react';
 
 const MOCK_IMPORT_DATA = {
   spotify: [
@@ -812,14 +812,6 @@ function Sidebar({
             letterSpacing: '1px'
           }}>Playlists</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button 
-              onClick={handleOpenImport}
-              className="btn-icon" 
-              style={{ padding: '4px' }}
-              title="Import Playlist"
-            >
-              <Download size={15} />
-            </button>
             <button 
               onClick={() => setShowCreateModal(true)}
               className="btn-icon" 
