@@ -95,8 +95,9 @@ function App() {
   const [eqPreset, setEqPreset] = useState('flat');
   const [eqGains, setEqGains] = useState({ bass: 0, mid: 0, treble: 0, vocal: 0 });
 
-  // Native HTML5 Audio Player Reference
-  const audioRef = useRef(null);
+  // YouTube IFrame Player References
+  const [ytPlayer, setYtPlayer] = useState(null);
+  const playerReadyRef = useRef(false);
 
   // Synchronize localStorage
   useEffect(() => {
@@ -185,13 +186,124 @@ function App() {
     }
   }, []);
 
+  // Load YouTube Player API
+  useEffect(() => {
+    if (!window.YT) {
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+      window.onYouTubeIframeAPIReady = () => {
+        initYTPlayer();
+      };
+    } else {
+      initYTPlayer();
+    }
+
+    return () => {
+      // clean up global callback
+      window.onYouTubeIframeAPIReady = null;
+    };
+  }, []);
+
+  // Refs to avoid stale closures in YouTube Player callbacks
+  const onStateChangeRef = useRef();
+  const onErrorRef = useRef();
+
+  // Keep references up to date with every render
+  useEffect(() => {
+    onStateChangeRef.current = (state) => {
+      if (state === window.YT.PlayerState.PLAYING) {
+        setIsPlaying(true);
+        if (ytPlayer) {
+          const dur = ytPlayer.getDuration();
+          if (dur) setDuration(dur);
+        }
+      } else if (state === window.YT.PlayerState.PAUSED) {
+        setIsPlaying(false);
+      } else if (state === window.YT.PlayerState.ENDED) {
+        setIsPlaying(false);
+        handlePlaybackEnded();
+      }
+    };
+  });
+
+  useEffect(() => {
+    onErrorRef.current = (event) => {
+      console.error('YouTube Player Error:', event.data);
+      setIsPlaying(false);
+      playNextSong();
+    };
+  });
+
+  const initYTPlayer = () => {
+    if (playerReadyRef.current) return;
+    try {
+      window.ytPlayerInstance = new window.YT.Player('yt-player', {
+        height: '100%',
+        width: '100%',
+        videoId: '',
+        playerVars: {
+          autoplay: 0,
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
+          modestbranding: 1,
+          rel: 0,
+          showinfo: 0,
+          iv_load_policy: 3
+        },
+        events: {
+          onReady: (event) => {
+            setYtPlayer(event.target);
+            playerReadyRef.current = true;
+            event.target.setVolume(volume);
+          },
+          onStateChange: (event) => {
+            if (onStateChangeRef.current) {
+              onStateChangeRef.current(event.data);
+            }
+          },
+          onError: (event) => {
+            if (onErrorRef.current) {
+              onErrorRef.current(event);
+            }
+          }
+        }
+      });
+    } catch (err) {
+      console.error('Failed to initialize YouTube IFrame Player:', err);
+    }
+  };
+
+  // Poll current time while playing
+  useEffect(() => {
+    let interval;
+    if (isPlaying && ytPlayer) {
+      interval = setInterval(() => {
+        try {
+          const time = ytPlayer.getCurrentTime();
+          setCurrentTime(time);
+        } catch (e) {
+          // ignore transient player errors
+        }
+      }, 500);
+    }
+    return () => clearInterval(interval);
+  }, [isPlaying, ytPlayer]);
+
   // Sleep Timer countdown loop
   useEffect(() => {
     if (sleepTimer === null) return;
 
     if (sleepTimer <= 0) {
-      if (audioRef.current) {
-        audioRef.current.pause();
+      if (ytPlayer && playerReadyRef.current) {
+        try {
+          ytPlayer.pauseVideo();
+        } catch (e) {
+          console.error('Failed to pause player on sleep timer completion:', e);
+        }
       }
       setIsPlaying(false);
       setSleepTimer(null);
@@ -209,7 +321,7 @@ function App() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [sleepTimer]);
+  }, [sleepTimer, ytPlayer]);
 
   // Vibe detection helper
   const detectVibe = (song) => {
@@ -234,53 +346,6 @@ function App() {
   useEffect(() => {
     document.body.className = `vibe-${currentVibe}`;
   }, [currentVibe]);
-
-  // Sync initial volume and mute preferences on element mount
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume / 100;
-      audioRef.current.muted = isMuted;
-    }
-  }, [volume, isMuted]);
-
-  // Set up Media Session API for lock screen background controls
-  useEffect(() => {
-    if (currentSong && 'mediaSession' in navigator) {
-      navigator.mediaSession.metadata = new window.MediaMetadata({
-        title: currentSong.title,
-        artist: currentSong.channelName,
-        album: 'Online-Melodies',
-        artwork: [
-          { src: currentSong.thumbnail, sizes: '512x512', type: 'image/jpeg' }
-        ]
-      });
-
-      navigator.mediaSession.setActionHandler('play', () => {
-        if (audioRef.current) {
-          audioRef.current.play().catch(e => console.error(e));
-          setIsPlaying(true);
-        }
-      });
-      navigator.mediaSession.setActionHandler('pause', () => {
-        if (audioRef.current) {
-          audioRef.current.pause();
-          setIsPlaying(false);
-        }
-      });
-      navigator.mediaSession.setActionHandler('seekto', (details) => {
-        if (audioRef.current && details.seekTime) {
-          audioRef.current.currentTime = details.seekTime;
-          setCurrentTime(details.seekTime);
-        }
-      });
-      navigator.mediaSession.setActionHandler('previoustrack', () => {
-        playPreviousSong();
-      });
-      navigator.mediaSession.setActionHandler('nexttrack', () => {
-        playNextSong();
-      });
-    }
-  }, [currentSong]);
 
   // Main playback commands
   const playSong = (song, upcomingQueue = null) => {
@@ -318,25 +383,25 @@ function App() {
       return [song, ...filtered].slice(0, 30); // Cap at 30
     });
 
-    if (audioRef.current) {
+    if (ytPlayer && playerReadyRef.current) {
       try {
-        audioRef.current.src = `/api/stream/${song.id}`;
-        audioRef.current.play().catch(e => console.error("Playback start failed:", e));
+        ytPlayer.loadVideoById(song.id);
+        ytPlayer.playVideo();
         setIsPlaying(true);
       } catch (err) {
-        console.error('Failed to load audio stream:', err);
+        console.error('Failed to load video on YT Player:', err);
       }
     }
   };
 
   const togglePlay = () => {
-    if (!audioRef.current || !currentSong) return;
+    if (!ytPlayer || !currentSong) return;
     try {
       if (isPlaying) {
-        audioRef.current.pause();
+        ytPlayer.pauseVideo();
         setIsPlaying(false);
       } else {
-        audioRef.current.play().catch(e => console.error(e));
+        ytPlayer.playVideo();
         setIsPlaying(true);
       }
     } catch (e) {
@@ -345,9 +410,9 @@ function App() {
   };
 
   const seekTo = (seconds) => {
-    if (!audioRef.current) return;
+    if (!ytPlayer) return;
     try {
-      audioRef.current.currentTime = seconds;
+      ytPlayer.seekTo(seconds, true);
       setCurrentTime(seconds);
     } catch (e) {
       console.error(e);
@@ -356,12 +421,12 @@ function App() {
 
   const changeVolume = (newVolume) => {
     setVolume(newVolume);
-    if (!audioRef.current) return;
+    if (!ytPlayer) return;
     try {
-      audioRef.current.volume = newVolume / 100;
+      ytPlayer.setVolume(newVolume);
       if (newVolume > 0 && isMuted) {
         setIsMuted(false);
-        audioRef.current.muted = false;
+        ytPlayer.unMute();
       }
     } catch (e) {
       console.error(e);
@@ -369,11 +434,16 @@ function App() {
   };
 
   const toggleMute = () => {
-    if (!audioRef.current) return;
+    if (!ytPlayer) return;
     try {
-      const nextMute = !isMuted;
-      setIsMuted(nextMute);
-      audioRef.current.muted = nextMute;
+      if (isMuted) {
+        setIsMuted(false);
+        ytPlayer.unMute();
+        ytPlayer.setVolume(volume);
+      } else {
+        setIsMuted(true);
+        ytPlayer.mute();
+      }
     } catch (e) {
       console.error(e);
     }
@@ -636,23 +706,26 @@ function App() {
         />
       )}
 
-      {/* Native HTML5 Audio Player for background playback */}
-      <audio
-        ref={audioRef}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        onTimeUpdate={() => {
-          if (audioRef.current) {
-            setCurrentTime(audioRef.current.currentTime);
-          }
+      {/* Floating mini-video player (required for YouTube IFrame rendering) */}
+      <div 
+        id="yt-player-container" 
+        style={{
+          position: 'fixed',
+          bottom: '110px',
+          right: '20px',
+          width: '280px',
+          height: '160px',
+          zIndex: 1000,
+          display: showMiniPlayer && currentSong ? 'block' : 'none',
+          overflow: 'hidden',
+          borderRadius: '16px',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.6)',
+          background: '#000'
         }}
-        onDurationChange={() => {
-          if (audioRef.current) {
-            setDuration(audioRef.current.duration || 0);
-          }
-        }}
-        onEnded={handlePlaybackEnded}
-      />
+      >
+        <div id="yt-player" style={{ width: '100%', height: '100%' }}></div>
+      </div>
 
       {/* Bottom Playback bar */}
       <Player 
