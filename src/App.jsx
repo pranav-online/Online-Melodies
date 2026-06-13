@@ -179,8 +179,21 @@ function App() {
     if (code) {
       const codeVerifier = localStorage.getItem('spotify_code_verifier');
       const clientId = localStorage.getItem('online_melodies_spotify_client_id');
-      if (codeVerifier && clientId) {
-        fetchSpotifyTokenWithCode(code, codeVerifier, clientId);
+      if (codeVerifier) {
+        if (clientId) {
+          fetchSpotifyTokenWithCode(code, codeVerifier, clientId);
+        } else {
+          // Fetch from backend configuration if local storage is cleared
+          fetch('/api/spotify/config')
+            .then(res => res.json())
+            .then(data => {
+              if (data.clientId) {
+                localStorage.setItem('online_melodies_spotify_client_id', data.clientId);
+                fetchSpotifyTokenWithCode(code, codeVerifier, data.clientId);
+              }
+            })
+            .catch(err => console.error('Error fetching Spotify config during callback:', err));
+        }
       }
       window.history.replaceState(null, null, window.location.pathname);
     }

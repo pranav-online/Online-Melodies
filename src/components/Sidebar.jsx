@@ -350,6 +350,13 @@ const generateCodeChallenge = async (codeVerifier) => {
       if (spotifyToken) {
         setImportStep('connecting');
         fetchRealSpotifyPlaylists(spotifyToken);
+      } else if (backendClientId) {
+        // Skip setup screen entirely and redirect using the server-configured client ID
+        localStorage.setItem('online_melodies_spotify_client_id', backendClientId);
+        setSpotifyClientId(backendClientId);
+        setTempClientId(backendClientId);
+        setImportStep('connecting');
+        triggerSpotifyRedirect(backendClientId);
       } else {
         setImportStep('spotify-config');
       }
