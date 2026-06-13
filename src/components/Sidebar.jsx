@@ -179,6 +179,9 @@ function Sidebar({
         });
         if (!response.ok) {
           const errData = await response.json().catch(() => ({}));
+          if (response.status === 403) {
+            setSpotifyToken(null);
+          }
           throw new Error(errData?.error?.message || `Spotify API returned status ${response.status}`);
         }
         const playlistData = await response.json();
@@ -246,7 +249,8 @@ function Sidebar({
         const errData = await response.json().catch(() => ({}));
         let errMsg = errData?.error?.message || `Failed to fetch playlists (status: ${response.status})`;
         if (response.status === 403) {
-          errMsg += '. Your Spotify account must be added to the "User Management" list in the Spotify Developer Dashboard for this Client ID. Ensure you have registered your email under Developer Settings.';
+          setSpotifyToken(null); // Clear invalid token so we can request a fresh one
+          errMsg = 'Failed to fetch playlists (status: 403). Your Spotify account must be added to the "User Management" list in the Spotify Developer Dashboard for this Client ID. Ensure you have registered your email under Developer Settings.';
         }
         throw new Error(errMsg);
       }
