@@ -2,9 +2,21 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Try to load env file dynamically if not loaded already (useful for local run without --env-file flag)
+try {
+  const envPath = path.join(__dirname, '../.env');
+  if (fs.existsSync(envPath)) {
+    process.loadEnvFile(envPath);
+    console.log('Successfully loaded .env file natively via process.loadEnvFile');
+  }
+} catch (e) {
+  console.warn('Note: process.loadEnvFile not supported or failed to load:', e.message);
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -195,6 +207,13 @@ async function getSpotifyClientCredentialsToken() {
   return data.access_token;
 }
 
+// Expose public Spotify Client ID (used for frontend authentication)
+app.get('/api/spotify/config', (req, res) => {
+  res.json({
+    clientId: process.env.SPOTIFY_CLIENT_ID || null
+  });
+});
+
 // Fetch Spotify Playlist metadata and tracks (Option 1: Server-side Client Credentials)
 app.get('/api/spotify/playlist/:id', async (req, res) => {
   const { id } = req.params;
@@ -213,8 +232,20 @@ app.get('/api/spotify/playlist/:id', async (req, res) => {
       if (response.status === 404) {
         return res.status(404).json({ error: 'Playlist not found. Make sure the playlist is set to Public.' });
       }
-      const errData = await response.json().catch(() => ({}));
-      return res.status(response.status).json({ error: errData?.error?.message || 'Failed to fetch playlist from Spotify' });
+      const bodyText = await response.text().catch(() => '');
+      let errMsg = '';
+      try {
+        const json = JSON.parse(bodyText);
+        errMsg = json?.error?.message;
+      } catch (e) {
+        errMsg = bodyText;
+      }
+      
+      if (response.status === 403 && errMsg.includes('premium subscription')) {
+        errMsg = 'An active Spotify Premium subscription is required for the Developer App Owner to use direct server-side URL imports. Please click "Spotify Playlist Sync" to connect your personal Spotify account first, which allows importing public playlists via your user session.';
+      }
+      
+      return res.status(response.status).json({ error: errMsg || 'Failed to fetch playlist from Spotify' });
     }
 
     const data = await response.json();

@@ -87,6 +87,7 @@ function Sidebar({
   // Real Spotify credentials & data
   const [spotifyClientId, setSpotifyClientId] = useState(() => localStorage.getItem('online_melodies_spotify_client_id') || '');
   const [tempClientId, setTempClientId] = useState(spotifyClientId);
+  const [backendClientId, setBackendClientId] = useState('');
   const [spotifyPlaylists, setSpotifyPlaylists] = useState([]);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -100,6 +101,28 @@ function Sidebar({
   const [pastedPlaylistUrl, setPastedPlaylistUrl] = useState('');
   const [isFetchingUrl, setIsFetchingUrl] = useState(false);
   const [fetchedPlaylistInfo, setFetchedPlaylistInfo] = useState(null);
+
+  // Fetch Spotify configuration from backend on mount
+  useEffect(() => {
+    const fetchSpotifyConfig = async () => {
+      try {
+        const response = await fetch('/api/spotify/config');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.clientId) {
+            setBackendClientId(data.clientId);
+            // Pre-fill setup Client ID if the user hasn't stored one locally yet
+            if (!localStorage.getItem('online_melodies_spotify_client_id')) {
+              setTempClientId(data.clientId);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch Spotify client configuration:', err);
+      }
+    };
+    fetchSpotifyConfig();
+  }, []);
 
   // Watch for Spotify Redirect parameters on mount/reload
   useEffect(() => {
@@ -147,14 +170,43 @@ function Sidebar({
     setSelectedSource('spotify');
     
     try {
-      const response = await fetch(`/api/spotify/playlist/${playlistId}`);
-      
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData?.error || `Server failed to fetch playlist (status: ${response.status})`);
+      let data;
+      if (spotifyToken) {
+        const response = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
+          headers: {
+            'Authorization': `Bearer ${spotifyToken}`
+          }
+        });
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData?.error?.message || `Spotify API returned status ${response.status}`);
+        }
+        const playlistData = await response.json();
+        const tracksData = playlistData.tracks?.items || [];
+        const tracks = tracksData
+          .filter(item => item && item.track)
+          .map(item => {
+            const track = item.track;
+            return {
+              query: `${track.name} ${track.artists?.[0]?.name || ''}`.trim(),
+              title: track.name,
+              artist: track.artists?.map(a => a.name).join(', ') || 'Unknown Artist'
+            };
+          })
+          .slice(0, 20); // limit to first 20 tracks
+        data = {
+          name: playlistData.name,
+          description: playlistData.description || 'No description provided.',
+          tracks
+        };
+      } else {
+        const response = await fetch(`/api/spotify/playlist/${playlistId}`);
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData?.error || `Server failed to fetch playlist (status: ${response.status})`);
+        }
+        data = await response.json();
       }
-      
-      const data = await response.json();
       
       if (!data.tracks || data.tracks.length === 0) {
         throw new Error('No tracks found in this Spotify playlist.');
@@ -192,7 +244,11 @@ function Sidebar({
       }
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        throw new Error(errData?.error?.message || `Failed to fetch playlists (status: ${response.status})`);
+        let errMsg = errData?.error?.message || `Failed to fetch playlists (status: ${response.status})`;
+        if (response.status === 403) {
+          errMsg += '. Your Spotify account must be added to the "User Management" list in the Spotify Developer Dashboard for this Client ID. Ensure you have registered your email under Developer Settings.';
+        }
+        throw new Error(errMsg);
       }
       const data = await response.json();
       const items = data.items || [];
@@ -1245,6 +1301,11 @@ const generateCodeChallenge = async (codeVerifier) => {
                       fontFamily: 'var(--font-primary)'
                     }}
                   />
+                  {backendClientId && tempClientId === backendClientId && (
+                    <span style={{ fontSize: '11.5px', color: '#1DB954', marginTop: '2px', fontWeight: '600' }}>
+                      ✓ Pre-configured by server. You can click Connect directly!
+                    </span>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
