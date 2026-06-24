@@ -33,7 +33,10 @@ export const formatTime = (secs) => {
 
 import { Menu } from 'lucide-react';
 
+const SILENT_AUDIO_URI = "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV";
+
 function App() {
+  const silentAudioRef = useRef(null);
   const [showSplash, setShowSplash] = useState(true);
 
   // Spotify Authentication states
@@ -265,7 +268,8 @@ function App() {
           modestbranding: 1,
           rel: 0,
           showinfo: 0,
-          iv_load_policy: 3
+          iv_load_policy: 3,
+          playsinline: 1
         },
         events: {
           onReady: (event) => {
@@ -336,6 +340,117 @@ function App() {
     return () => clearInterval(interval);
   }, [sleepTimer, ytPlayer]);
 
+  // Synchronize silent audio with isPlaying (fallback / state keep-alive)
+  useEffect(() => {
+    const silentAudio = silentAudioRef.current;
+    if (!silentAudio) return;
+
+    if (isPlaying) {
+      silentAudio.play().catch((err) => {
+        console.warn('Silent audio play failed in effect:', err);
+      });
+    } else {
+      silentAudio.pause();
+    }
+  }, [isPlaying]);
+
+  // Keep references updated to avoid stale closures in Media Session handlers
+  const mediaActionsRef = useRef({});
+  useEffect(() => {
+    mediaActionsRef.current = { togglePlay, playNextSong, playPreviousSong, seekTo };
+  });
+
+  // Synchronize Media Session metadata
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || !currentSong) return;
+
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentSong.title || 'Unknown Song',
+        artist: currentSong.channelName || 'Unknown Artist',
+        album: 'Online-Melodies',
+        artwork: [
+          { src: currentSong.thumbnail || '', sizes: '96x96', type: 'image/jpeg' },
+          { src: currentSong.thumbnail || '', sizes: '128x128', type: 'image/jpeg' },
+          { src: currentSong.thumbnail || '', sizes: '192x192', type: 'image/jpeg' },
+          { src: currentSong.thumbnail || '', sizes: '256x256', type: 'image/jpeg' },
+          { src: currentSong.thumbnail || '', sizes: '384x384', type: 'image/jpeg' },
+          { src: currentSong.thumbnail || '', sizes: '512x512', type: 'image/jpeg' },
+        ]
+      });
+    } catch (e) {
+      console.error('Failed to set Media Session metadata:', e);
+    }
+  }, [currentSong]);
+
+  // Synchronize Media Session playback state
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+  }, [isPlaying]);
+
+  // Register Media Session action handlers
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+
+    try {
+      navigator.mediaSession.setActionHandler('play', () => {
+        if (ytPlayer && playerReadyRef.current) {
+          try {
+            ytPlayer.playVideo();
+            setIsPlaying(true);
+            if (silentAudioRef.current) {
+              silentAudioRef.current.play().catch(() => {});
+            }
+          } catch (e) {
+            console.error('Media Session Play handler failed:', e);
+          }
+        }
+      });
+
+      navigator.mediaSession.setActionHandler('pause', () => {
+        if (ytPlayer && playerReadyRef.current) {
+          try {
+            ytPlayer.pauseVideo();
+            setIsPlaying(false);
+            if (silentAudioRef.current) {
+              silentAudioRef.current.pause();
+            }
+          } catch (e) {
+            console.error('Media Session Pause handler failed:', e);
+          }
+        }
+      });
+
+      navigator.mediaSession.setActionHandler('previoustrack', () => {
+        mediaActionsRef.current.playPreviousSong();
+      });
+
+      navigator.mediaSession.setActionHandler('nexttrack', () => {
+        mediaActionsRef.current.playNextSong();
+      });
+
+      navigator.mediaSession.setActionHandler('seekto', (details) => {
+        if (details.seekTime !== undefined) {
+          mediaActionsRef.current.seekTo(details.seekTime);
+        }
+      });
+    } catch (error) {
+      console.warn('Failed to register Media Session handlers:', error);
+    }
+
+    return () => {
+      if (!('mediaSession' in navigator)) return;
+      try {
+        navigator.mediaSession.setActionHandler('play', null);
+        navigator.mediaSession.setActionHandler('pause', null);
+        navigator.mediaSession.setActionHandler('previoustrack', null);
+        navigator.mediaSession.setActionHandler('nexttrack', null);
+        navigator.mediaSession.setActionHandler('seekto', null);
+      } catch (e) {}
+    };
+  }, [ytPlayer]);
+
   // Vibe detection helper
   const detectVibe = (song) => {
     const title = (song.title || '').toLowerCase();
@@ -401,6 +516,9 @@ function App() {
         ytPlayer.loadVideoById(song.id);
         ytPlayer.playVideo();
         setIsPlaying(true);
+        if (silentAudioRef.current) {
+          silentAudioRef.current.play().catch(e => console.warn('Silent audio play failed:', e));
+        }
       } catch (err) {
         console.error('Failed to load video on YT Player:', err);
       }
@@ -413,9 +531,15 @@ function App() {
       if (isPlaying) {
         ytPlayer.pauseVideo();
         setIsPlaying(false);
+        if (silentAudioRef.current) {
+          silentAudioRef.current.pause();
+        }
       } else {
         ytPlayer.playVideo();
         setIsPlaying(true);
+        if (silentAudioRef.current) {
+          silentAudioRef.current.play().catch(e => console.warn('Silent audio play failed:', e));
+        }
       }
     } catch (e) {
       console.error(e);
@@ -774,6 +898,14 @@ function App() {
 
       {/* Full-screen Music Laser & Light show animation on Like */}
       <LikeAnimation />
+
+      {/* Silent audio for background play keep-alive */}
+      <audio 
+        ref={silentAudioRef} 
+        src={SILENT_AUDIO_URI} 
+        loop 
+        style={{ display: 'none' }} 
+      />
 
       {/* Cinematic Splash Screen Intro */}
       {showSplash && (
