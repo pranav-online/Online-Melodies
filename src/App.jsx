@@ -101,6 +101,7 @@ function App() {
   // YouTube IFrame Player References
   const [ytPlayer, setYtPlayer] = useState(null);
   const playerReadyRef = useRef(false);
+  const lastAutoResumeRef = useRef(0);
 
   // Synchronize localStorage
   useEffect(() => {
@@ -237,7 +238,26 @@ function App() {
           if (dur) setDuration(dur);
         }
       } else if (state === window.YT.PlayerState.PAUSED) {
-        setIsPlaying(false);
+        if (isPlaying && document.visibilityState === 'hidden') {
+          // Automatic pause due to tab backgrounding / screen lock.
+          // Keep isPlaying as true, and keep the unmuted silent audio active.
+          if (silentAudioRef.current) {
+            silentAudioRef.current.play().catch(() => {});
+          }
+          const now = Date.now();
+          if (now - lastAutoResumeRef.current > 5000) {
+            lastAutoResumeRef.current = now;
+            if (ytPlayer && playerReadyRef.current) {
+              try {
+                ytPlayer.playVideo();
+              } catch (e) {
+                console.warn('Failed to force resume background playback:', e);
+              }
+            }
+          }
+        } else {
+          setIsPlaying(false);
+        }
       } else if (state === window.YT.PlayerState.ENDED) {
         setIsPlaying(false);
         handlePlaybackEnded();
@@ -980,7 +1000,6 @@ function App() {
         ref={silentAudioRef} 
         src={SILENT_AUDIO_URI} 
         loop 
-        muted 
         playsInline 
         preload="auto"
         style={{ display: 'none' }} 
