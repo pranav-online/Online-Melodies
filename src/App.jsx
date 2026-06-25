@@ -508,6 +508,46 @@ function App() {
     };
   }, [isPlaying, ytPlayer]);
 
+  useEffect(() => {
+    const ensureAppHistoryState = () => {
+      if (!window.history.state || !window.history.state.onlineMelodiesApp) {
+        window.history.replaceState({ onlineMelodiesApp: true }, '');
+        window.history.pushState({ onlineMelodiesApp: true }, '');
+      }
+    };
+
+    const handlePopState = (event) => {
+      if (isPlaying && event.state && event.state.onlineMelodiesApp) {
+        window.history.pushState({ onlineMelodiesApp: true }, '');
+        if (silentAudioRef.current) {
+          silentAudioRef.current.play().catch(() => {});
+        }
+        if (ytPlayer && playerReadyRef.current) {
+          try {
+            ytPlayer.playVideo();
+          } catch (err) {
+            console.warn('Failed to resume YT playback on popstate:', err);
+          }
+        }
+      }
+    };
+
+    const handleBeforeUnload = (event) => {
+      if (!isPlaying) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    ensureAppHistoryState();
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isPlaying, ytPlayer]);
+
   const playSong = (song, upcomingQueue = null) => {
     if (!song) return;
     
