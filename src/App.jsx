@@ -475,7 +475,39 @@ function App() {
     document.body.className = `vibe-${currentVibe}`;
   }, [currentVibe]);
 
-  // Main playback commands
+  // Ensure background playback is kept alive if the app is hidden
+  useEffect(() => {
+    const attemptBackgroundKeepAlive = () => {
+      if (!isPlaying) return;
+      if (silentAudioRef.current) {
+        silentAudioRef.current.play().catch((err) => {
+          console.warn('Failed to keep silent audio alive on background:', err);
+        });
+      }
+      if (ytPlayer && playerReadyRef.current) {
+        try {
+          ytPlayer.playVideo();
+        } catch (err) {
+          console.warn('Failed to resume YT playback on background:', err);
+        }
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        attemptBackgroundKeepAlive();
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', attemptBackgroundKeepAlive);
+
+    return () => {
+      window.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', attemptBackgroundKeepAlive);
+    };
+  }, [isPlaying, ytPlayer]);
+
   const playSong = (song, upcomingQueue = null) => {
     if (!song) return;
     
@@ -850,16 +882,18 @@ function App() {
           position: 'fixed',
           bottom: '110px',
           right: '20px',
-          width: '280px',
-          height: '160px',
+          width: showMiniPlayer && currentSong ? '280px' : '1px',
+          height: showMiniPlayer && currentSong ? '160px' : '1px',
           zIndex: 1000,
-          display: showMiniPlayer && currentSong ? 'block' : 'none',
           overflow: 'hidden',
           borderRadius: '16px',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.6)',
-          background: '#000'
+          border: showMiniPlayer && currentSong ? '1px solid rgba(255, 255, 255, 0.1)' : '0',
+          boxShadow: showMiniPlayer && currentSong ? '0 20px 40px rgba(0, 0, 0, 0.6)' : 'none',
+          background: '#000',
+          opacity: showMiniPlayer && currentSong ? 1 : 0,
+          pointerEvents: showMiniPlayer && currentSong ? 'auto' : 'none'
         }}
+        aria-hidden={!(showMiniPlayer && currentSong)}
       >
         <div id="yt-player" style={{ width: '100%', height: '100%' }}></div>
       </div>
@@ -904,6 +938,9 @@ function App() {
         ref={silentAudioRef} 
         src={SILENT_AUDIO_URI} 
         loop 
+        muted 
+        playsInline 
+        preload="auto"
         style={{ display: 'none' }} 
       />
 
