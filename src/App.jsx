@@ -238,25 +238,35 @@ function App() {
           if (dur) setDuration(dur);
         }
       } else if (state === window.YT.PlayerState.PAUSED) {
-        if (isPlaying && document.visibilityState === 'hidden') {
-          // Automatic pause due to tab backgrounding / screen lock.
+        if (isPlaying) {
+          // Automatic pause due to backgrounding, screen lock, or back-button interrupt.
           // Keep isPlaying as true, and keep the unmuted silent audio active.
           if (silentAudioRef.current) {
             silentAudioRef.current.play().catch(() => {});
           }
-          const now = Date.now();
-          if (now - lastAutoResumeRef.current > 5000) {
-            lastAutoResumeRef.current = now;
+          if (document.visibilityState === 'visible') {
+            // If the tab is visible (like during a back-button press), we can auto-resume the video immediately.
             if (ytPlayer && playerReadyRef.current) {
               try {
                 ytPlayer.playVideo();
               } catch (e) {
-                console.warn('Failed to force resume background playback:', e);
+                console.warn('Failed to auto-resume on visible interrupt:', e);
+              }
+            }
+          } else {
+            // Backgrounded / screen locked auto-resume attempt (throttled)
+            const now = Date.now();
+            if (now - lastAutoResumeRef.current > 5000) {
+              lastAutoResumeRef.current = now;
+              if (ytPlayer && playerReadyRef.current) {
+                try {
+                  ytPlayer.playVideo();
+                } catch (e) {
+                  console.warn('Failed to force resume background playback:', e);
+                }
               }
             }
           }
-        } else {
-          setIsPlaying(false);
         }
       } else if (state === window.YT.PlayerState.ENDED) {
         setIsPlaying(false);
