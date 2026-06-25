@@ -409,6 +409,21 @@ function App() {
     navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
   }, [isPlaying]);
 
+  // Synchronize Media Session playback position state
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState || !currentSong || !duration || duration <= 0) return;
+    try {
+      const pos = Math.min(Math.max(0, currentTime), duration);
+      navigator.mediaSession.setPositionState({
+        duration: duration,
+        playbackRate: 1,
+        position: pos
+      });
+    } catch (e) {
+      console.warn('Failed to set Media Session position state:', e);
+    }
+  }, [currentTime, duration, currentSong]);
+
   // Register Media Session action handlers
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
