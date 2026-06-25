@@ -920,10 +920,12 @@ function App() {
         id="yt-player-container" 
         style={{
           position: 'fixed',
-          bottom: '110px',
-          right: '20px',
-          width: showMiniPlayer && currentSong ? '280px' : '1px',
-          height: showMiniPlayer && currentSong ? '160px' : '1px',
+          bottom: showMiniPlayer && currentSong ? '110px' : 'auto',
+          right: showMiniPlayer && currentSong ? '20px' : 'auto',
+          left: showMiniPlayer && currentSong ? 'auto' : '-9999px',
+          top: showMiniPlayer && currentSong ? 'auto' : '-9999px',
+          width: '280px',
+          height: '160px',
           zIndex: 1000,
           overflow: 'hidden',
           borderRadius: '16px',
