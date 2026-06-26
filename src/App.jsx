@@ -57,6 +57,11 @@ function App() {
   // Player State
   const [currentSong, setCurrentSong] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const isPlayingRef = useRef(false);
+  const setIsPlayingSync = (val) => {
+    isPlayingRef.current = val;
+    setIsPlaying(val);
+  };
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(80);
@@ -232,13 +237,13 @@ function App() {
   useEffect(() => {
     onStateChangeRef.current = (state) => {
       if (state === window.YT.PlayerState.PLAYING) {
-        setIsPlaying(true);
+        setIsPlayingSync(true);
         if (ytPlayer) {
           const dur = ytPlayer.getDuration();
           if (dur) setDuration(dur);
         }
       } else if (state === window.YT.PlayerState.PAUSED) {
-        if (isPlaying) {
+        if (isPlayingRef.current) {
           // Automatic pause due to backgrounding, screen lock, or back-button interrupt.
           // Keep isPlaying as true, and keep the unmuted silent audio active.
           if (silentAudioRef.current) {
@@ -269,7 +274,7 @@ function App() {
           }
         }
       } else if (state === window.YT.PlayerState.ENDED) {
-        setIsPlaying(false);
+        setIsPlayingSync(false);
         handlePlaybackEnded();
       }
     };
@@ -278,7 +283,7 @@ function App() {
   useEffect(() => {
     onErrorRef.current = (event) => {
       console.error('YouTube Player Error:', event.data);
-      setIsPlaying(false);
+      setIsPlayingSync(false);
       playNextSong();
     };
   });
@@ -352,7 +357,7 @@ function App() {
           console.error('Failed to pause player on sleep timer completion:', e);
         }
       }
-      setIsPlaying(false);
+      setIsPlayingSync(false);
       setSleepTimer(null);
       return;
     }
@@ -395,17 +400,21 @@ function App() {
     if (!('mediaSession' in navigator) || !currentSong) return;
 
     try {
+      const artworkUrl = currentSong.thumbnail 
+        ? (currentSong.thumbnail.startsWith('http') ? currentSong.thumbnail : window.location.origin + currentSong.thumbnail)
+        : '';
+
       navigator.mediaSession.metadata = new MediaMetadata({
         title: currentSong.title || 'Unknown Song',
         artist: currentSong.channelName || 'Unknown Artist',
         album: 'Online-Melodies',
         artwork: [
-          { src: currentSong.thumbnail || '', sizes: '96x96', type: 'image/jpeg' },
-          { src: currentSong.thumbnail || '', sizes: '128x128', type: 'image/jpeg' },
-          { src: currentSong.thumbnail || '', sizes: '192x192', type: 'image/jpeg' },
-          { src: currentSong.thumbnail || '', sizes: '256x256', type: 'image/jpeg' },
-          { src: currentSong.thumbnail || '', sizes: '384x384', type: 'image/jpeg' },
-          { src: currentSong.thumbnail || '', sizes: '512x512', type: 'image/jpeg' },
+          { src: artworkUrl, sizes: '96x96', type: 'image/jpeg' },
+          { src: artworkUrl, sizes: '128x128', type: 'image/jpeg' },
+          { src: artworkUrl, sizes: '192x192', type: 'image/jpeg' },
+          { src: artworkUrl, sizes: '256x256', type: 'image/jpeg' },
+          { src: artworkUrl, sizes: '384x384', type: 'image/jpeg' },
+          { src: artworkUrl, sizes: '512x512', type: 'image/jpeg' },
         ]
       });
     } catch (e) {
@@ -443,7 +452,7 @@ function App() {
         if (ytPlayer && playerReadyRef.current) {
           try {
             ytPlayer.playVideo();
-            setIsPlaying(true);
+            setIsPlayingSync(true);
             if (silentAudioRef.current) {
               silentAudioRef.current.play().catch(() => {});
             }
@@ -457,7 +466,7 @@ function App() {
         if (ytPlayer && playerReadyRef.current) {
           try {
             ytPlayer.pauseVideo();
-            setIsPlaying(false);
+            setIsPlayingSync(false);
             if (silentAudioRef.current) {
               silentAudioRef.current.pause();
             }
@@ -632,7 +641,7 @@ function App() {
       try {
         ytPlayer.loadVideoById(song.id);
         ytPlayer.playVideo();
-        setIsPlaying(true);
+        setIsPlayingSync(true);
         if (silentAudioRef.current) {
           silentAudioRef.current.play().catch(e => console.warn('Silent audio play failed:', e));
         }
@@ -647,13 +656,13 @@ function App() {
     try {
       if (isPlaying) {
         ytPlayer.pauseVideo();
-        setIsPlaying(false);
+        setIsPlayingSync(false);
         if (silentAudioRef.current) {
           silentAudioRef.current.pause();
         }
       } else {
         ytPlayer.playVideo();
-        setIsPlaying(true);
+        setIsPlayingSync(true);
         if (silentAudioRef.current) {
           silentAudioRef.current.play().catch(e => console.warn('Silent audio play failed:', e));
         }
