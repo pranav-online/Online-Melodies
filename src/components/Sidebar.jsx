@@ -70,7 +70,10 @@ function Sidebar({
   pendingPlaylistUrl,
   setPendingPlaylistUrl,
   isOpen,
-  onClose
+  onClose,
+  user,
+  onOpenAuth,
+  onLogout
 }) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
@@ -1846,6 +1849,122 @@ const generateCodeChallenge = async (codeVerifier) => {
           </div>
         </div>
       )}
+
+      {/* User Profile Section */}
+      <div style={{
+        marginTop: 'auto',
+        padding: '16px 8px 8px 8px',
+        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px'
+      }}>
+        {user ? (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'rgba(255, 255, 255, 0.02)',
+            padding: '10px 12px',
+            borderRadius: '12px',
+            border: '1px solid rgba(255, 255, 255, 0.04)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+              <div style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, var(--vibe-accent) 0%, #3b82f6 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 'bold',
+                color: '#000',
+                fontSize: '14px',
+                flexShrink: 0
+              }}>
+                {user.username.charAt(0).toUpperCase()}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <span style={{
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#fff',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}>
+                  {user.username}
+                </span>
+                <span style={{
+                  fontSize: '11px',
+                  color: '#10b981',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }}></span>
+                  Cloud Synced
+                </span>
+              </div>
+            </div>
+            
+            <button
+              onClick={onLogout}
+              className="btn-icon"
+              style={{
+                padding: '6px',
+                color: '#f87171',
+                borderRadius: '8px',
+                transition: 'all 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+              title="Log Out"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+            </button>
+          </div>
+        ) : (
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.02)',
+            border: '1px dashed rgba(255, 255, 255, 0.1)',
+            borderRadius: '12px',
+            padding: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+            alignItems: 'center',
+            textAlign: 'center'
+          }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+              Sync your library across all devices
+            </span>
+            <button
+              onClick={onOpenAuth}
+              className="btn-primary"
+              style={{
+                width: '100%',
+                padding: '8px 14px',
+                fontSize: '13px',
+                fontWeight: '600',
+                borderRadius: '8px',
+                cursor: 'pointer'
+              }}
+            >
+              Sign In / Sign Up
+            </button>
+          </div>
+        )}
+      </div>
     </aside>
   );
 }

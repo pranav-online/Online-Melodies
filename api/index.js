@@ -3,6 +3,8 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { registerUser, loginUser, verifySession, logoutUser, syncUserData } from './db.js';
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -272,6 +274,81 @@ app.get('/api/spotify/playlist/:id', async (req, res) => {
   } catch (err) {
     console.error('Error in /api/spotify/playlist endpoint:', err);
     res.status(500).json({ error: err.message || 'Server error fetching Spotify playlist' });
+  }
+});
+
+// Authentication Endpoints
+app.post('/api/auth/signup', (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password || username.trim().length < 3 || password.length < 4) {
+    return res.status(400).json({ error: 'Username (min 3 characters) and password (min 4 characters) are required' });
+  }
+
+  try {
+    const result = registerUser(username.trim(), password);
+    res.status(201).json({ message: 'User registered successfully', username: result.username });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
+
+  try {
+    const result = loginUser(username.trim(), password);
+    res.json(result);
+  } catch (err) {
+    res.status(401).json({ error: err.message });
+  }
+});
+
+app.get('/api/auth/me', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  const user = verifySession(token);
+  if (!user) {
+    return res.status(401).json({ error: 'Invalid or expired session' });
+  }
+
+  res.json(user);
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(400).json({ error: 'No token provided' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  logoutUser(token);
+  res.json({ message: 'Logged out successfully' });
+});
+
+app.post('/api/auth/sync', (req, res) => {
+  const authHeader = req.headers.authorization;
+  const { username, likedSongs, playlists, recentlyPlayed } = req.body;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+  if (!username) {
+    return res.status(400).json({ error: 'Username is required' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    syncUserData(username, token, { likedSongs, playlists, recentlyPlayed });
+    res.json({ status: 'ok' });
+  } catch (err) {
+    res.status(401).json({ error: err.message });
   }
 });
 

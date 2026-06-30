@@ -10,6 +10,7 @@ import Visualizer from './components/Visualizer';
 import Equalizer from './components/Equalizer';
 import LikeAnimation from './components/LikeAnimation';
 import SplashIntro from './components/SplashIntro';
+import AuthModal from './components/AuthModal';
 
 // Helper to parse duration string (e.g. "3:45" or "1:02:14") to seconds
 export const parseDurationToSeconds = (durationStr) => {
@@ -38,6 +39,11 @@ const SILENT_AUDIO_URI = "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2
 function App() {
   const silentAudioRef = useRef(null);
   const [showSplash, setShowSplash] = useState(true);
+
+  // Authentication states
+  const [user, setUser] = useState(null);
+  const [authToken, setAuthToken] = useState(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   // Spotify Authentication states
   const [spotifyToken, setSpotifyToken] = useState(null);
@@ -120,6 +126,196 @@ function App() {
   useEffect(() => {
     localStorage.setItem('online_melodies_recent', JSON.stringify(recentlyPlayed));
   }, [recentlyPlayed]);
+
+  // Library merging helpers for multi-device sync
+  const mergeLikedSongs = (local, server) => {
+    const combined = [...local, ...server];
+    const seen = new Set();
+    return combined.filter(song => {
+      if (!song || !song.id) return false;
+      const duplicate = seen.has(song.id);
+      seen.add(song.id);
+      return !duplicate;
+    });
+  };
+
+  const mergePlaylists = (local, server) => {
+    const combined = [...local, ...server];
+    const idMap = new Map();
+    combined.forEach(p => {
+      if (!p || !p.id) return;
+      if (!idMap.has(p.id)) {
+        idMap.set(p.id, { ...p, songs: [...(p.songs || [])] });
+      } else {
+        const existing = idMap.get(p.id);
+        const allSongs = [...(existing.songs || []), ...(p.songs || [])];
+        const songSeen = new Set();
+        existing.songs = allSongs.filter(s => {
+          if (!s || !s.id) return false;
+          const dup = songSeen.has(s.id);
+          songSeen.add(s.id);
+          return !dup;
+        });
+      }
+    });
+    return Array.from(idMap.values());
+  };
+
+  const mergeRecentlyPlayed = (local, server) => {
+    const combined = [...local, ...server];
+    const seen = new Set();
+    return combined.filter(song => {
+      if (!song || !song.id) return false;
+      const duplicate = seen.has(song.id);
+      seen.add(song.id);
+      return !duplicate;
+    }).slice(0, 30);
+  };
+
+  // Auto-login on startup
+  useEffect(() => {
+    const token = localStorage.getItem('online_melodies_auth_token');
+    const savedUsername = localStorage.getItem('online_melodies_auth_username');
+    if (token && savedUsername) {
+      fetch('/api/auth/me', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      .then(res => {
+        if (res.ok) return res.json();
+        throw new Error('Session invalid');
+      })
+      .then(data => {
+        setUser({ username: data.username });
+        setAuthToken(token);
+        
+        // Sync and merge server data
+        if (data.data) {
+          setLikedSongs(prevLiked => {
+            const mergedLiked = mergeLikedSongs(prevLiked, data.data.likedSongs || []);
+            setPlaylists(prevPlaylists => {
+              const mergedPlaylists = mergePlaylists(prevPlaylists, data.data.playlists || []);
+              setRecentlyPlayed(prevRecent => {
+                const mergedRecent = mergeRecentlyPlayed(prevRecent, data.data.recentlyPlayed || []);
+                
+                // Upload merged libraries back to sync cloud
+                fetch('/api/auth/sync', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                  },
+                  body: JSON.stringify({
+                    username: data.username,
+                    likedSongs: mergedLiked,
+                    playlists: mergedPlaylists,
+                    recentlyPlayed: mergedRecent
+                  })
+                }).catch(err => console.error('Failed to sync merged data on startup:', err));
+
+                return mergedRecent;
+              });
+              return mergedPlaylists;
+            });
+            return mergedLiked;
+          });
+        }
+      })
+      .catch(err => {
+        console.warn('Auto-login session check failed:', err);
+        localStorage.removeItem('online_melodies_auth_token');
+        localStorage.removeItem('online_melodies_auth_username');
+      });
+    }
+  }, []);
+
+  const handleLoginSuccess = (username, token, serverData, remember) => {
+    setUser({ username });
+    setAuthToken(token);
+    if (remember) {
+      localStorage.setItem('online_melodies_auth_token', token);
+      localStorage.setItem('online_melodies_auth_username', username);
+    }
+
+    if (serverData) {
+      setLikedSongs(prevLiked => {
+        const mergedLiked = mergeLikedSongs(prevLiked, serverData.likedSongs || []);
+        setPlaylists(prevPlaylists => {
+          const mergedPlaylists = mergePlaylists(prevPlaylists, serverData.playlists || []);
+          setRecentlyPlayed(prevRecent => {
+            const mergedRecent = mergeRecentlyPlayed(prevRecent, serverData.recentlyPlayed || []);
+            
+            fetch('/api/auth/sync', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                username,
+                likedSongs: mergedLiked,
+                playlists: mergedPlaylists,
+                recentlyPlayed: mergedRecent
+              })
+            }).catch(err => console.error('Failed to sync merged data on login:', err));
+
+            return mergedRecent;
+          });
+          return mergedPlaylists;
+        });
+        return mergedLiked;
+      });
+    }
+  };
+
+  const handleLogout = () => {
+    if (authToken) {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      }).catch(err => console.error('Logout request failed:', err));
+    }
+
+    setUser(null);
+    setAuthToken(null);
+    localStorage.removeItem('online_melodies_auth_token');
+    localStorage.removeItem('online_melodies_auth_username');
+
+    // Reset local state to preserve privacy on logout
+    setLikedSongs([]);
+    setPlaylists([]);
+    setRecentlyPlayed([]);
+  };
+
+  // Debounced cloud synchronization
+  useEffect(() => {
+    if (!authToken || !user) return;
+
+    const delayDebounceFn = setTimeout(() => {
+      fetch('/api/auth/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+          username: user.username,
+          likedSongs,
+          playlists,
+          recentlyPlayed
+        })
+      })
+      .then(res => {
+        if (!res.ok) console.warn('Library sync failed with status:', res.status);
+      })
+      .catch(err => console.error('Library sync request failed:', err));
+    }, 1000);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [likedSongs, playlists, recentlyPlayed, authToken, user]);
 
   // Exchange Spotify OAuth Code for Access Token (PKCE flow)
   const fetchSpotifyTokenWithCode = async (code, codeVerifier, clientId) => {
@@ -931,6 +1127,9 @@ function App() {
         setPendingPlaylistUrl={setPendingPlaylistUrl}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        user={user}
+        onOpenAuth={() => setShowAuthModal(true)}
+        onLogout={handleLogout}
       />
 
       {/* Main Content Area */}
@@ -1043,6 +1242,13 @@ function App() {
       {showSplash && (
         <SplashIntro onComplete={() => setShowSplash(false)} />
       )}
+
+      {/* Login & Registration Dialog */}
+      <AuthModal 
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onLoginSuccess={handleLoginSuccess}
+      />
     </div>
   );
 }
