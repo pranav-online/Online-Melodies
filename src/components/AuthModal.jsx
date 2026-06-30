@@ -40,7 +40,13 @@ function AuthModal({ isOpen, onClose, onLoginSuccess }) {
         }),
       });
 
-      const data = await response.json();
+      let data = {};
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        throw new Error('Authentication server is restarting or unreachable. Please try again in a few seconds.');
+      }
 
       if (!response.ok) {
         throw new Error(data.error || 'Something went wrong. Please try again.');
@@ -67,7 +73,15 @@ function AuthModal({ isOpen, onClose, onLoginSuccess }) {
               password,
             }),
           });
-          const loginData = await loginRes.json();
+          
+          let loginData = {};
+          const loginContentType = loginRes.headers.get('content-type');
+          if (loginContentType && loginContentType.includes('application/json')) {
+            loginData = await loginRes.json();
+          } else {
+            throw new Error('Server offline');
+          }
+
           if (loginRes.ok) {
             onLoginSuccess(loginData.username, loginData.token, loginData.data, rememberMe);
             onClose();
