@@ -2,21 +2,35 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
-import { kv } from '@vercel/kv';
+import { createClient } from '@vercel/kv';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DB_FILE = path.join(__dirname, 'users.json');
 
 // Initialize empty DB file if not exists (for local file fallback)
-if (!fs.existsSync(DB_FILE)) {
-  fs.writeFileSync(DB_FILE, JSON.stringify({}, null, 2), 'utf8');
+try {
+  if (!fs.existsSync(DB_FILE)) {
+    fs.writeFileSync(DB_FILE, JSON.stringify({}, null, 2), 'utf8');
+  }
+} catch (e) {
+  console.warn('Unable to initialize local JSON database (likely a read-only environment):', e.message);
 }
 
 // Determine if we should use Vercel KV (production/Vercel env)
 const useKV = !!(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+let kvClient = null;
+
 if (useKV) {
-  console.log('Database running in CLOUD mode (Vercel KV)');
+  try {
+    kvClient = createClient({
+      url: process.env.KV_REST_API_URL,
+      token: process.env.KV_REST_API_TOKEN,
+    });
+    console.log('Database running in CLOUD mode (Vercel KV)');
+  } catch (err) {
+    console.error('Failed to initialize Vercel KV client:', err.message);
+  }
 } else {
   console.log('Database running in LOCAL mode (JSON file fallback)');
 }
@@ -70,8 +84,8 @@ function parseKVData(val) {
 export async function registerUser(username, password) {
   const lowerUsername = username.toLowerCase();
 
-  if (useKV) {
-    const existingUser = await kv.get(`user:${lowerUsername}`);
+  if (useKV && kvClient) {
+    const existingUser = await kvClient.get(`user:${lowerUsername}`);
     if (existingUser) {
       throw new Error('User already exists');
     }
@@ -87,7 +101,7 @@ export async function registerUser(username, password) {
       recentlyPlayed: []
     };
 
-    await kv.set(`user:${lowerUsername}`, JSON.stringify(user));
+    await kvClient.set(`user:${lowerUsername}`, JSON.stringify(user));
     return { username };
   } else {
     const db = readData();
@@ -114,8 +128,8 @@ export async function registerUser(username, password) {
 export async function loginUser(username, password) {
   const lowerUsername = username.toLowerCase();
 
-  if (useKV) {
-    const rawUser = await kv.get(`user:${lowerUsername}`);
+  if (useKV && kvClient) {
+    const rawUser = await kvClient.get(`user:${lowerUsername}`);
     const user = parseKVData(rawUser);
     
     if (!user) {
@@ -136,10 +150,10 @@ export async function loginUser(username, password) {
     }
 
     // Save updated user sessions
-    await kv.set(`user:${lowerUsername}`, JSON.stringify(user));
+    await kvClient.set(`user:${lowerUsername}`, JSON.stringify(user));
     
     // Index session token mapping to enable O(1) fast session verification
-    await kv.set(`session:${token}`, JSON.stringify({ username: user.username, lowerUsername }));
+    await kvClient.set(`session:${token}`, JSON.stringify({ username: user.username, lowerUsername }));
 
     return {
       username: user.username,
@@ -184,12 +198,12 @@ export async function loginUser(username, password) {
 }
 
 export async function verifySession(token) {
-  if (useKV) {
-    const rawSession = await kv.get(`session:${token}`);
+  if (useKV && kvClient) {
+    const rawSession = await kvClient.get(`session:${token}`);
     const session = parseKVData(rawSession);
     if (!session) return null;
 
-    const rawUser = await kv.get(`user:${session.lowerUsername}`);
+    const rawUser = await kvClient.get(`user:${session.lowerUsername}`);
     const user = parseKVData(rawUser);
     if (!user || !user.sessions || !user.sessions.includes(token)) {
       return null;
@@ -223,18 +237,18 @@ export async function verifySession(token) {
 }
 
 export async function logoutUser(token) {
-  if (useKV) {
-    const rawSession = await kv.get(`session:${token}`);
+  if (useKV && kvClient) {
+    const rawSession = await kvClient.get(`session:${token}`);
     const session = parseKVData(rawSession);
     if (!session) return false;
 
-    await kv.del(`session:${token}`);
+    await kvClient.del(`session:${token}`);
 
-    const rawUser = await kv.get(`user:${session.lowerUsername}`);
+    const rawUser = await kvClient.get(`user:${session.lowerUsername}`);
     const user = parseKVData(rawUser);
     if (user && user.sessions) {
       user.sessions = user.sessions.filter(t => t !== token);
-      await kv.set(`user:${session.lowerUsername}`, JSON.stringify(user));
+      await kvClient.set(`user:${session.lowerUsername}`, JSON.stringify(user));
       return true;
     }
     return false;
@@ -255,14 +269,14 @@ export async function logoutUser(token) {
 export async function syncUserData(username, token, { likedSongs, playlists, recentlyPlayed }) {
   const lowerUsername = username.toLowerCase();
 
-  if (useKV) {
-    const rawSession = await kv.get(`session:${token}`);
+  if (useKV && kvClient) {
+    const rawSession = await kvClient.get(`session:${token}`);
     const session = parseKVData(rawSession);
     if (!session || session.lowerUsername !== lowerUsername) {
       throw new Error('Unauthorized');
     }
 
-    const rawUser = await kv.get(`user:${lowerUsername}`);
+    const rawUser = await kvClient.get(`user:${lowerUsername}`);
     const user = parseKVData(rawUser);
     if (!user || !user.sessions || !user.sessions.includes(token)) {
       throw new Error('Unauthorized');
@@ -272,7 +286,7 @@ export async function syncUserData(username, token, { likedSongs, playlists, rec
     user.playlists = playlists || [];
     user.recentlyPlayed = recentlyPlayed || [];
 
-    await kv.set(`user:${lowerUsername}`, JSON.stringify(user));
+    await kvClient.set(`user:${lowerUsername}`, JSON.stringify(user));
     return true;
   } else {
     const db = readData();
