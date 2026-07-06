@@ -27,6 +27,94 @@ app.use(cors());
 app.use(express.json());
 
 // Helper to fetch and parse HTML to extract ytInitialData
+let cachedInvidiousInstances = [];
+let cacheTime = 0;
+
+async function getInvidiousInstances() {
+  const now = Date.now();
+  if (cachedInvidiousInstances.length > 0 && (now - cacheTime) < 3600 * 1000) {
+    return cachedInvidiousInstances;
+  }
+
+  try {
+    const res = await fetch('https://api.invidious.io/instances.json?sort_by=type,health', {
+      signal: AbortSignal.timeout(4000)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const instances = [];
+      for (const [domain, details] of data) {
+        if (details.type === 'https' && details.monitor && details.monitor.uptime > 90) {
+          instances.push(`https://${domain}`);
+        }
+      }
+      if (instances.length > 0) {
+        cachedInvidiousInstances = instances;
+        cacheTime = now;
+        return instances;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to fetch dynamic Invidious instances list:', err.message);
+  }
+
+  return [
+    'https://yt.chocolatemoo53.com',
+    'https://yewtu.be',
+    'https://invidious.flokinet.to',
+    'https://inv.nadeko.net'
+  ];
+}
+
+function formatSeconds(seconds) {
+  if (!seconds) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+}
+
+async function searchInvidiousFallback(query) {
+  const instances = await getInvidiousInstances();
+  
+  for (let i = 0; i < Math.min(instances.length, 5); i++) {
+    const instance = instances[i];
+    const searchUrl = `${instance}/api/v1/search?q=${encodeURIComponent(query)}&type=video`;
+    console.log(`Trying fallback search on Invidious instance: ${instance}`);
+    try {
+      const response = await fetch(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        },
+        signal: AbortSignal.timeout(4000)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data) && data.length > 0) {
+          const videos = data.map(item => {
+            const videoId = item.videoId;
+            const viewsCount = item.viewCount ? Number(item.viewCount).toLocaleString() : '';
+            return {
+              id: videoId,
+              title: item.title || '',
+              thumbnail: `/api/thumbnail/${videoId}`,
+              channelName: item.author || 'Unknown Artist',
+              duration: formatSeconds(item.lengthSeconds),
+              views: viewsCount ? `${viewsCount} views` : '',
+              published: item.publishedText || ''
+            };
+          });
+          return videos;
+        }
+      }
+    } catch (err) {
+      console.warn(`Fallback search failed on ${instance}:`, err.message);
+    }
+  }
+  return [];
+}
+
+// Helper to fetch and parse HTML to extract ytInitialData
 async function searchYouTubeVideos(query) {
   try {
     // Encodes the query and appends the video filter (sp=EgIQAQ%253D%253D is "videos only")
@@ -64,8 +152,7 @@ async function searchYouTubeVideos(query) {
     }
 
     if (!jsonStr) {
-      console.warn('Could not find ytInitialData script in HTML');
-      return [];
+      throw new Error('Could not find ytInitialData script in HTML');
     }
 
     // Clean up potential formatting differences
@@ -104,10 +191,14 @@ async function searchYouTubeVideos(query) {
       }
     }
 
+    if (videos.length === 0) {
+      throw new Error('Parsed 0 videos from YouTube results page');
+    }
+
     return videos;
   } catch (error) {
-    console.error('Error searching YouTube:', error);
-    return [];
+    console.warn(`Primary YouTube scraper failed, trying Invidious fallback:`, error.message);
+    return searchInvidiousFallback(query);
   }
 }
 
