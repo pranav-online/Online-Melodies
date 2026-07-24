@@ -73,6 +73,160 @@ function formatSeconds(seconds) {
   return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 }
 
+let cachedPipedInstances = [];
+let pipedCacheTime = 0;
+
+async function getPipedInstances() {
+  const now = Date.now();
+  if (cachedPipedInstances.length > 0 && (now - pipedCacheTime) < 3600 * 1000) {
+    return cachedPipedInstances;
+  }
+
+  try {
+    const res = await fetch('https://piped-instances.kavin.rocks/', {
+      signal: AbortSignal.timeout(4000)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const instances = [];
+      for (const item of data) {
+        if (item.api_url && item.uptime_24h > 90) {
+          instances.push(item.api_url);
+        }
+      }
+      if (instances.length > 0) {
+        cachedPipedInstances = instances;
+        pipedCacheTime = now;
+        return instances;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to fetch dynamic Piped instances list:', err.message);
+  }
+
+  return [
+    'https://api.piped.private.coffee',
+    'https://pipedapi.kavin.rocks'
+  ];
+}
+
+async function searchPipedFallback(query) {
+  const instances = await getPipedInstances();
+  
+  for (let i = 0; i < Math.min(instances.length, 5); i++) {
+    const instance = instances[i];
+    const searchUrl = `${instance}/search?q=${encodeURIComponent(query)}&filter=videos`;
+    console.log(`Trying fallback search on Piped instance: ${instance}`);
+    try {
+      const response = await fetch(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        },
+        signal: AbortSignal.timeout(4000)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && Array.isArray(data.items) && data.items.length > 0) {
+          const videos = data.items
+            .filter(item => item.type === 'stream')
+            .map(item => {
+              const videoId = item.url ? item.url.split('v=')[1] : '';
+              if (!videoId) return null;
+              const viewsCount = item.views ? Number(item.views).toLocaleString() : '';
+              return {
+                id: videoId,
+                title: item.title || '',
+                thumbnail: `/api/thumbnail/${videoId}`,
+                channelName: item.uploaderName || 'Unknown Artist',
+                duration: formatSeconds(item.duration),
+                views: viewsCount ? `${viewsCount} views` : '',
+                published: item.uploadedDate || ''
+              };
+            })
+            .filter(Boolean);
+          if (videos.length > 0) return videos;
+        }
+      }
+    } catch (err) {
+      console.warn(`Fallback search failed on Piped ${instance}:`, err.message);
+    }
+  }
+  return [];
+}
+
+async function searchYouTubeAPI(query) {
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    console.log('Using official YouTube Data API for search');
+    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=20&q=${encodeURIComponent(query)}&type=video&key=${apiKey}`;
+    const searchRes = await fetch(searchUrl);
+    if (!searchRes.ok) {
+      const errorText = await searchRes.text();
+      throw new Error(`YouTube API search failed: ${searchRes.status} - ${errorText}`);
+    }
+
+    const searchData = await searchRes.json();
+    const items = searchData.items || [];
+    if (items.length === 0) return [];
+
+    const videoIds = items.map(item => item.id.videoId).join(',');
+
+    const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,statistics,snippet&id=${videoIds}&key=${apiKey}`;
+    const detailsRes = await fetch(detailsUrl);
+    if (!detailsRes.ok) {
+      return items.map(item => ({
+        id: item.id.videoId,
+        title: item.snippet.title || '',
+        thumbnail: `/api/thumbnail/${item.id.videoId}`,
+        channelName: item.snippet.channelTitle || 'Unknown Artist',
+        duration: '0:00',
+        views: '',
+        published: item.snippet.publishedAt ? new Date(item.snippet.publishedAt).toLocaleDateString() : ''
+      }));
+    }
+
+    const detailsData = await detailsRes.json();
+    const videoDetails = detailsData.items || [];
+    const detailsMap = new Map(videoDetails.map(v => [v.id, v]));
+
+    const parseISO8601Duration = (isoDuration) => {
+      if (!isoDuration) return '0:00';
+      const match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+      if (!match) return '0:00';
+      const hours = parseInt(match[1] || 0, 10);
+      const minutes = parseInt(match[2] || 0, 10);
+      const seconds = parseInt(match[3] || 0, 10);
+      const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+      return formatSeconds(totalSeconds);
+    };
+
+    return items.map(item => {
+      const videoId = item.id.videoId;
+      const detail = detailsMap.get(videoId);
+      
+      const duration = detail ? parseISO8601Duration(detail.contentDetails?.duration) : '0:00';
+      const viewsRaw = detail ? detail.statistics?.viewCount : null;
+      const views = viewsRaw ? `${Number(viewsRaw).toLocaleString()} views` : '';
+      
+      return {
+        id: videoId,
+        title: item.snippet.title || '',
+        thumbnail: `/api/thumbnail/${videoId}`,
+        channelName: item.snippet.channelTitle || 'Unknown Artist',
+        duration,
+        views,
+        published: item.snippet.publishedAt ? new Date(item.snippet.publishedAt).toLocaleDateString() : ''
+      };
+    });
+  } catch (err) {
+    console.error('YouTube Data API search failed:', err.message);
+    return null;
+  }
+}
+
 async function searchInvidiousFallback(query) {
   const instances = await getInvidiousInstances();
   
@@ -116,6 +270,13 @@ async function searchInvidiousFallback(query) {
 
 // Helper to fetch and parse HTML to extract ytInitialData
 async function searchYouTubeVideos(query) {
+  if (process.env.YOUTUBE_API_KEY) {
+    const apiResults = await searchYouTubeAPI(query);
+    if (apiResults !== null) {
+      return apiResults;
+    }
+  }
+
   try {
     // Encodes the query and appends the video filter (sp=EgIQAQ%253D%253D is "videos only")
     const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%253D%253D`;
@@ -197,7 +358,12 @@ async function searchYouTubeVideos(query) {
 
     return videos;
   } catch (error) {
-    console.warn(`Primary YouTube scraper failed, trying Invidious fallback:`, error.message);
+    console.warn(`Primary YouTube scraper failed, trying Piped fallback:`, error.message);
+    const pipedResults = await searchPipedFallback(query);
+    if (pipedResults && pipedResults.length > 0) {
+      return pipedResults;
+    }
+    console.warn(`Piped fallback failed, trying Invidious fallback`);
     return searchInvidiousFallback(query);
   }
 }
