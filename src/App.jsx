@@ -37,7 +37,9 @@ import { Menu } from 'lucide-react';
 const SILENT_AUDIO_URI = "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV";
 
 function App() {
-  const silentAudioRef = useRef(null);
+  const audioPlayerRef = useRef(null);
+  const [audioSourceType, setAudioSourceType] = useState('youtube-iframe'); // 'youtube-iframe' | 'audio-element'
+  const [isExtractingAudio, setIsExtractingAudio] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
 
   // Authentication states
@@ -439,11 +441,11 @@ function App() {
           if (dur) setDuration(dur);
         }
       } else if (state === window.YT.PlayerState.PAUSED) {
-        if (isPlayingRef.current) {
+        if (isPlayingRef.current && audioSourceType === 'youtube-iframe') {
           // Automatic pause due to backgrounding, screen lock, or back-button interrupt.
           // Keep isPlaying as true, and keep the unmuted silent audio active.
-          if (silentAudioRef.current) {
-            silentAudioRef.current.play().catch(() => {});
+          if (audioPlayerRef.current) {
+            audioPlayerRef.current.play().catch(() => {});
           }
           if (document.visibilityState === 'visible') {
             // If the tab is visible (like during a back-button press), we can auto-resume the video immediately.
@@ -573,17 +575,25 @@ function App() {
 
   // Synchronize silent audio with isPlaying (fallback / state keep-alive)
   useEffect(() => {
-    const silentAudio = silentAudioRef.current;
-    if (!silentAudio) return;
+    const audioPlayer = audioPlayerRef.current;
+    if (!audioPlayer) return;
 
     if (isPlaying) {
-      silentAudio.play().catch((err) => {
-        console.warn('Silent audio play failed in effect:', err);
+      audioPlayer.play().catch((err) => {
+        console.warn('Audio play failed in effect:', err);
       });
     } else {
-      silentAudio.pause();
+      audioPlayer.pause();
     }
   }, [isPlaying]);
+
+  // Synchronize audio element volume and mute states
+  useEffect(() => {
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.volume = volume / 100;
+      audioPlayerRef.current.muted = isMuted;
+    }
+  }, [volume, isMuted]);
 
   // Keep references updated to avoid stale closures in Media Session handlers
   const mediaActionsRef = useRef({});
@@ -645,29 +655,43 @@ function App() {
 
     try {
       navigator.mediaSession.setActionHandler('play', () => {
-        if (ytPlayer && playerReadyRef.current) {
-          try {
-            ytPlayer.playVideo();
+        if (audioSourceType === 'audio-element') {
+          if (audioPlayerRef.current) {
+            audioPlayerRef.current.play().catch(() => {});
             setIsPlayingSync(true);
-            if (silentAudioRef.current) {
-              silentAudioRef.current.play().catch(() => {});
+          }
+        } else {
+          if (ytPlayer && playerReadyRef.current) {
+            try {
+              ytPlayer.playVideo();
+              setIsPlayingSync(true);
+              if (audioPlayerRef.current) {
+                audioPlayerRef.current.play().catch(() => {});
+              }
+            } catch (e) {
+              console.error('Media Session Play handler failed:', e);
             }
-          } catch (e) {
-            console.error('Media Session Play handler failed:', e);
           }
         }
       });
 
       navigator.mediaSession.setActionHandler('pause', () => {
-        if (ytPlayer && playerReadyRef.current) {
-          try {
-            ytPlayer.pauseVideo();
+        if (audioSourceType === 'audio-element') {
+          if (audioPlayerRef.current) {
+            audioPlayerRef.current.pause();
             setIsPlayingSync(false);
-            if (silentAudioRef.current) {
-              silentAudioRef.current.pause();
+          }
+        } else {
+          if (ytPlayer && playerReadyRef.current) {
+            try {
+              ytPlayer.pauseVideo();
+              setIsPlayingSync(false);
+              if (audioPlayerRef.current) {
+                audioPlayerRef.current.pause();
+              }
+            } catch (e) {
+              console.error('Media Session Pause handler failed:', e);
             }
-          } catch (e) {
-            console.error('Media Session Pause handler failed:', e);
           }
         }
       });
@@ -699,7 +723,7 @@ function App() {
         navigator.mediaSession.setActionHandler('seekto', null);
       } catch (e) {}
     };
-  }, [ytPlayer]);
+  }, [ytPlayer, audioSourceType]);
 
   // Vibe detection helper
   const detectVibe = (song) => {
@@ -729,16 +753,25 @@ function App() {
   useEffect(() => {
     const attemptBackgroundKeepAlive = () => {
       if (!isPlaying) return;
-      if (silentAudioRef.current) {
-        silentAudioRef.current.play().catch((err) => {
-          console.warn('Failed to keep silent audio alive on background:', err);
-        });
-      }
-      if (ytPlayer && playerReadyRef.current) {
-        try {
-          ytPlayer.playVideo();
-        } catch (err) {
-          console.warn('Failed to resume YT playback on background:', err);
+      
+      if (audioSourceType === 'audio-element') {
+        if (audioPlayerRef.current) {
+          audioPlayerRef.current.play().catch((err) => {
+            console.warn('Failed to keep audio alive on background:', err);
+          });
+        }
+      } else {
+        if (audioPlayerRef.current) {
+          audioPlayerRef.current.play().catch((err) => {
+            console.warn('Failed to keep silent audio alive on background:', err);
+          });
+        }
+        if (ytPlayer && playerReadyRef.current) {
+          try {
+            ytPlayer.playVideo();
+          } catch (err) {
+            console.warn('Failed to resume YT playback on background:', err);
+          }
         }
       }
     };
@@ -756,7 +789,7 @@ function App() {
       window.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pagehide', attemptBackgroundKeepAlive);
     };
-  }, [isPlaying, ytPlayer]);
+  }, [isPlaying, ytPlayer, audioSourceType]);
 
   useEffect(() => {
     const ensureAppHistoryState = () => {
@@ -769,14 +802,21 @@ function App() {
     const handlePopState = (event) => {
       if (isPlaying && event.state && event.state.onlineMelodiesApp) {
         window.history.pushState({ onlineMelodiesApp: true }, '');
-        if (silentAudioRef.current) {
-          silentAudioRef.current.play().catch(() => {});
-        }
-        if (ytPlayer && playerReadyRef.current) {
-          try {
-            ytPlayer.playVideo();
-          } catch (err) {
-            console.warn('Failed to resume YT playback on popstate:', err);
+        
+        if (audioSourceType === 'audio-element') {
+          if (audioPlayerRef.current) {
+            audioPlayerRef.current.play().catch(() => {});
+          }
+        } else {
+          if (audioPlayerRef.current) {
+            audioPlayerRef.current.play().catch(() => {});
+          }
+          if (ytPlayer && playerReadyRef.current) {
+            try {
+              ytPlayer.playVideo();
+            } catch (err) {
+              console.warn('Failed to resume YT playback on popstate:', err);
+            }
           }
         }
       }
@@ -796,9 +836,9 @@ function App() {
       window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [isPlaying, ytPlayer]);
+  }, [isPlaying, ytPlayer, audioSourceType]);
 
-  const playSong = (song, upcomingQueue = null) => {
+  const playSong = async (song, upcomingQueue = null) => {
     if (!song) return;
     
     // Add to queue if not present, and update queue states
@@ -833,13 +873,105 @@ function App() {
       return [song, ...filtered].slice(0, 30); // Cap at 30
     });
 
+    // Pause currently active playback sources
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+    }
     if (ytPlayer && playerReadyRef.current) {
       try {
-        ytPlayer.loadVideoById(song.id);
+        ytPlayer.pauseVideo();
+      } catch (e) {}
+    }
+
+    setIsExtractingAudio(true);
+    setAudioSourceType('youtube-iframe'); // Default fallback
+
+    try {
+      const res = await fetch(`/api/stream/${song.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.url) {
+          console.log('Successfully resolved direct audio stream:', data.url);
+          setAudioSourceType('audio-element');
+          setIsExtractingAudio(false);
+          
+          if (audioPlayerRef.current) {
+            audioPlayerRef.current.src = data.url;
+            audioPlayerRef.current.load();
+            try {
+              await audioPlayerRef.current.play();
+              setIsPlayingSync(true);
+            } catch (playErr) {
+              console.error('HTML5 audio play failed, falling back to YouTube:', playErr);
+              setAudioSourceType('youtube-iframe');
+              playYouTubeVideo(song.id);
+            }
+          }
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to resolve stream URL, trying client-side Cobalt resolver:', err);
+    }
+
+    // Try direct client-side Cobalt extraction as fallback
+    try {
+      console.log('Trying client-side direct Cobalt resolver...');
+      const response = await fetch('https://api.cobalt.tools/api/json', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          url: `https://www.youtube.com/watch?v=${song.id}`,
+          isAudioOnly: true
+        }),
+        signal: AbortSignal.timeout(4000)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.url) {
+          console.log('Client-side Cobalt successfully resolved audio stream:', data.url);
+          setAudioSourceType('audio-element');
+          setIsExtractingAudio(false);
+          
+          if (audioPlayerRef.current) {
+            audioPlayerRef.current.src = data.url;
+            audioPlayerRef.current.load();
+            try {
+              await audioPlayerRef.current.play();
+              setIsPlayingSync(true);
+            } catch (playErr) {
+              console.error('Client-side resolved audio play failed, falling back to YouTube:', playErr);
+              setAudioSourceType('youtube-iframe');
+              playYouTubeVideo(song.id);
+            }
+          }
+          return;
+        }
+      }
+    } catch (directErr) {
+      console.warn('Direct client-side Cobalt resolver failed, falling back to YouTube:', directErr.message);
+    }
+
+    // Fallback on error or empty response
+    setIsExtractingAudio(false);
+    setAudioSourceType('youtube-iframe');
+    playYouTubeVideo(song.id);
+  };
+
+  const playYouTubeVideo = (videoId) => {
+    if (ytPlayer && playerReadyRef.current) {
+      try {
+        ytPlayer.loadVideoById(videoId);
         ytPlayer.playVideo();
         setIsPlayingSync(true);
-        if (silentAudioRef.current) {
-          silentAudioRef.current.play().catch(e => console.warn('Silent audio play failed:', e));
+        if (audioPlayerRef.current) {
+          audioPlayerRef.current.src = SILENT_AUDIO_URI;
+          audioPlayerRef.current.load();
+          audioPlayerRef.current.play().catch(e => console.warn('Silent play failed:', e));
         }
       } catch (err) {
         console.error('Failed to load video on YT Player:', err);
@@ -848,38 +980,61 @@ function App() {
   };
 
   const togglePlay = () => {
-    if (!ytPlayer || !currentSong) return;
-    try {
+    if (!currentSong) return;
+
+    if (audioSourceType === 'audio-element') {
+      if (!audioPlayerRef.current) return;
       if (isPlaying) {
-        ytPlayer.pauseVideo();
+        audioPlayerRef.current.pause();
         setIsPlayingSync(false);
-        if (silentAudioRef.current) {
-          silentAudioRef.current.pause();
-        }
       } else {
-        ytPlayer.playVideo();
+        audioPlayerRef.current.play().catch(e => console.error(e));
         setIsPlayingSync(true);
-        if (silentAudioRef.current) {
-          silentAudioRef.current.play().catch(e => console.warn('Silent audio play failed:', e));
-        }
       }
-    } catch (e) {
-      console.error(e);
+    } else {
+      if (!ytPlayer) return;
+      try {
+        if (isPlaying) {
+          ytPlayer.pauseVideo();
+          setIsPlayingSync(false);
+          if (audioPlayerRef.current) {
+            audioPlayerRef.current.pause();
+          }
+        } else {
+          ytPlayer.playVideo();
+          setIsPlayingSync(true);
+          if (audioPlayerRef.current) {
+            audioPlayerRef.current.play().catch(e => console.warn('Silent audio play failed:', e));
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
     }
   };
 
   const seekTo = (seconds) => {
-    if (!ytPlayer) return;
-    try {
-      ytPlayer.seekTo(seconds, true);
-      setCurrentTime(seconds);
-    } catch (e) {
-      console.error(e);
+    if (audioSourceType === 'audio-element') {
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.currentTime = seconds;
+        setCurrentTime(seconds);
+      }
+    } else {
+      if (!ytPlayer) return;
+      try {
+        ytPlayer.seekTo(seconds, true);
+        setCurrentTime(seconds);
+      } catch (e) {
+        console.error(e);
+      }
     }
   };
 
   const changeVolume = (newVolume) => {
     setVolume(newVolume);
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.volume = newVolume / 100;
+    }
     if (!ytPlayer) return;
     try {
       ytPlayer.setVolume(newVolume);
@@ -893,15 +1048,20 @@ function App() {
   };
 
   const toggleMute = () => {
+    const newMuted = !isMuted;
+    setIsMuted(newMuted);
+
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.muted = newMuted;
+    }
+
     if (!ytPlayer) return;
     try {
-      if (isMuted) {
-        setIsMuted(false);
+      if (newMuted) {
+        ytPlayer.mute();
+      } else {
         ytPlayer.unMute();
         ytPlayer.setVolume(volume);
-      } else {
-        setIsMuted(true);
-        ytPlayer.mute();
       }
     } catch (e) {
       console.error(e);
@@ -944,10 +1104,18 @@ function App() {
 
   const handlePlaybackEnded = () => {
     if (repeatMode === 'one') {
-      if (ytPlayer) {
-        ytPlayer.seekTo(0, true);
-        ytPlayer.playVideo();
-        setIsPlaying(true);
+      if (audioSourceType === 'audio-element') {
+        if (audioPlayerRef.current) {
+          audioPlayerRef.current.currentTime = 0;
+          audioPlayerRef.current.play().catch(() => {});
+          setIsPlaying(true);
+        }
+      } else {
+        if (ytPlayer) {
+          ytPlayer.seekTo(0, true);
+          ytPlayer.playVideo();
+          setIsPlaying(true);
+        }
       }
     } else {
       playNextSong();
@@ -1223,19 +1391,37 @@ function App() {
         addSongToPlaylist={addSongToPlaylist}
         sleepTimer={sleepTimer}
         setSleepTimer={setSleepTimer}
+        isExtractingAudio={isExtractingAudio}
+        audioSourceType={audioSourceType}
       />
 
       {/* Full-screen Music Laser & Light show animation on Like */}
       <LikeAnimation />
 
-      {/* Silent audio for background play keep-alive */}
+      {/* Silent/Direct audio element for background play */}
       <audio 
-        ref={silentAudioRef} 
+        ref={audioPlayerRef} 
         src={SILENT_AUDIO_URI} 
-        loop 
+        loop={audioSourceType === 'youtube-iframe'} 
         playsInline 
         preload="auto"
         style={{ display: 'none' }} 
+        onTimeUpdate={() => {
+          if (audioSourceType === 'audio-element' && audioPlayerRef.current) {
+            setCurrentTime(audioPlayerRef.current.currentTime);
+          }
+        }}
+        onLoadedMetadata={() => {
+          if (audioSourceType === 'audio-element' && audioPlayerRef.current) {
+            setDuration(audioPlayerRef.current.duration);
+          }
+        }}
+        onEnded={() => {
+          if (audioSourceType === 'audio-element') {
+            setIsPlayingSync(false);
+            handlePlaybackEnded();
+          }
+        }}
       />
 
       {/* Cinematic Splash Screen Intro */}

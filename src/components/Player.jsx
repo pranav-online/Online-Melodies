@@ -36,7 +36,9 @@ function Player({
   playlists = [],
   addSongToPlaylist,
   sleepTimer,
-  setSleepTimer
+  setSleepTimer,
+  isExtractingAudio = false,
+  audioSourceType = 'youtube-iframe'
 }) {
   const [showVibeMenu, setShowVibeMenu] = useState(false);
   const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
@@ -113,7 +115,7 @@ function Player({
                 border: '1px solid rgba(255, 255, 255, 0.2)'
               }} />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', maxWidth: '180px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', maxWidth: '240px' }}>
               <span style={{
                 fontSize: '14.5px',
                 fontWeight: '600',
@@ -124,15 +126,39 @@ function Player({
               }} title={currentSong.title}>
                 {currentSong.title}
               </span>
-              <span style={{
-                fontSize: '12px',
-                color: 'var(--text-secondary)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis'
-              }}>
-                {currentSong.channelName}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span style={{
+                  fontSize: '12px',
+                  color: 'var(--text-secondary)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: '120px'
+                }}>
+                  {currentSong.channelName}
+                </span>
+                {isExtractingAudio && (
+                  <span style={{ fontSize: '10px', color: 'var(--vibe-accent)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                    <span className="pulse-dot" style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--vibe-accent)', display: 'inline-block' }}></span>
+                    Optimizing Stream
+                  </span>
+                )}
+                {!isExtractingAudio && audioSourceType === 'audio-element' && (
+                  <span style={{ 
+                    fontSize: '9px', 
+                    color: '#38bdf8', 
+                    backgroundColor: 'rgba(56, 189, 248, 0.1)', 
+                    padding: '2px 6px', 
+                    borderRadius: '999px', 
+                    fontWeight: '800',
+                    border: '1px solid rgba(56, 189, 248, 0.2)',
+                    letterSpacing: '0.3px',
+                    textTransform: 'uppercase'
+                  }} title="Audio stream mode enables native lockscreen and background play">
+                    Background Play
+                  </span>
+                )}
+              </div>
             </div>
             <button
               onClick={(e) => toggleLikeSong(currentSong, e)}

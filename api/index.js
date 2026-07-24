@@ -3,6 +3,8 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import dns from 'dns';
+dns.setDefaultResultOrder('ipv4first');
 import { registerUser, loginUser, verifySession, logoutUser, syncUserData } from './db.js';
 
 
@@ -432,6 +434,126 @@ app.get('/api/suggest', async (req, res) => {
     console.error('Error fetching suggestions:', error);
     res.json([]);
   }
+});
+
+// Audio stream proxy/redirect resolver endpoint
+app.get('/api/stream/:id', async (req, res) => {
+  const { id } = req.params;
+  if (!id) {
+    return res.status(400).json({ error: 'Video ID is required' });
+  }
+
+  console.log(`Resolving stream URL for video: ${id}`);
+  
+  // Try Cobalt instances first
+  const cobaltInstances = [
+    'https://api.cobalt.tools/api/json',
+    'https://co.wuk.sh/api/json',
+    'https://cobalt.api.ryz.cx/api/json'
+  ];
+
+  for (const apiOf of cobaltInstances) {
+    try {
+      console.log(`Trying Cobalt resolver: ${apiOf}`);
+      const response = await fetch(apiOf, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Origin': 'https://cobalt.tools',
+          'Referer': 'https://cobalt.tools/'
+        },
+        body: JSON.stringify({
+          url: `https://www.youtube.com/watch?v=${id}`,
+          isAudioOnly: true
+        }),
+        signal: AbortSignal.timeout(4000)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.url) {
+          console.log(`Cobalt successfully resolved audio stream! URL: ${data.url.substring(0, 60)}...`);
+          return res.json({ url: data.url });
+        }
+      }
+    } catch (err) {
+      console.warn(`Cobalt resolver ${apiOf} failed:`, err.message);
+    }
+  }
+
+  // Fallback to Piped API
+  try {
+    const pipedInstances = await getPipedInstances();
+    for (let i = 0; i < Math.min(pipedInstances.length, 3); i++) {
+      const apiOf = pipedInstances[i];
+      console.log(`Trying Piped resolver: ${apiOf}`);
+      try {
+        const response = await fetch(`${apiOf}/streams/${id}`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          },
+          signal: AbortSignal.timeout(4000)
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          // Find first audio stream
+          if (data && data.audioStreams && data.audioStreams.length > 0) {
+            console.log(`Piped successfully resolved audio stream!`);
+            return res.json({ url: data.audioStreams[0].url });
+          }
+          // Check for muxed video stream containing audio
+          if (data && data.videoStreams) {
+            const muxed = data.videoStreams.find(v => !v.videoOnly);
+            if (muxed && muxed.url) {
+              console.log(`Piped successfully resolved muxed stream containing audio!`);
+              return res.json({ url: muxed.url });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`Piped resolver ${apiOf} failed:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.warn(`Piped check failed:`, err.message);
+  }
+
+  // Fallback to Invidious API
+  try {
+    const invidiousInstances = await getInvidiousInstances();
+    for (let i = 0; i < Math.min(invidiousInstances.length, 3); i++) {
+      const apiOf = invidiousInstances[i];
+      console.log(`Trying Invidious resolver: ${apiOf}`);
+      try {
+        const response = await fetch(`${apiOf}/api/v1/videos/${id}`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          },
+          signal: AbortSignal.timeout(4000)
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.adaptiveFormats) {
+            const audioStream = data.adaptiveFormats.find(f => f.type && f.type.startsWith('audio'));
+            if (audioStream && audioStream.url) {
+              console.log(`Invidious successfully resolved audio stream!`);
+              return res.json({ url: audioStream.url });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`Invidious resolver ${apiOf} failed:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.warn(`Invidious check failed:`, err.message);
+  }
+
+  res.status(404).json({ error: 'Could not resolve playable audio stream for this video' });
 });
 
 // Helper to get Spotify Access Token via Client Credentials flow
