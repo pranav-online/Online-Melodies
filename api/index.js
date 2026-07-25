@@ -439,7 +439,7 @@ app.get('/api/suggest', async (req, res) => {
 
 const streamCache = new Map();
 
-// Reusable helper to resolve YouTube audio stream URL using ytdl-core and fallbacks
+// Reusable helper to resolve YouTube audio stream URL using parallel resolvers and fallbacks
 async function resolveAudioStreamUrl(id) {
   // Check cache first
   const cached = streamCache.get(id);
@@ -448,41 +448,40 @@ async function resolveAudioStreamUrl(id) {
     return cached.url;
   }
 
-  let cleanUrl = null;
-
-  // On Vercel serverless environments, skip local yt-dlp execution
-  // because it requires binary execution rights and local disk caching, and
-  // the resulting googlevideo.com links cannot be proxied due to serverless timeouts.
+  const tasks = [];
   const isVercel = process.env.VERCEL === '1';
 
   if (!isVercel) {
-    // Try youtube-dl-exec first (natively runs yt-dlp, extremely stable and immune to signature changes)
-    try {
-      console.log(`Trying youtube-dl-exec (yt-dlp) resolver for: ${id}`);
-    const videoUrl = `https://www.youtube.com/watch?v=${id}`;
-    const audioUrl = await youtubedl(videoUrl, {
-      getUrl: true,
-      format: 'bestaudio'
-    });
-    if (audioUrl) {
-      cleanUrl = audioUrl.trim();
-      console.log(`youtube-dl-exec successfully resolved audio stream!`);
-    }
-  } catch (err) {
-    console.warn(`youtube-dl-exec resolver failed for ${id}:`, err.message);
-  }
-  
-  // Try Cobalt instances fallback
-  if (!cleanUrl) {
-    const cobaltInstances = [
-      'https://api.cobalt.tools/api/json',
-      'https://co.wuk.sh/api/json',
-      'https://cobalt.api.ryz.cx/api/json'
-    ];
-
-    for (const apiOf of cobaltInstances) {
+    // Try local yt-dlp first
+    tasks.push((async () => {
       try {
-        console.log(`Trying Cobalt resolver: ${apiOf}`);
+        console.log(`Trying youtube-dl-exec (yt-dlp) resolver for: ${id}`);
+        const videoUrl = `https://www.youtube.com/watch?v=${id}`;
+        const audioUrl = await youtubedl(videoUrl, {
+          getUrl: true,
+          format: 'bestaudio'
+        });
+        if (audioUrl) {
+          const clean = audioUrl.trim();
+          console.log('youtube-dl-exec resolved successfully');
+          return clean;
+        }
+      } catch (err) {
+        // fail silently for Promise.any
+      }
+      throw new Error('yt-dlp failed');
+    })());
+  }
+
+  // Add Cobalt resolver tasks
+  const cobaltInstances = [
+    'https://api.cobalt.tools/api/json',
+    'https://co.wuk.sh/api/json',
+    'https://cobalt.api.ryz.cx/api/json'
+  ];
+  for (const apiOf of cobaltInstances) {
+    tasks.push((async () => {
+      try {
         const response = await fetch(apiOf, {
           method: 'POST',
           headers: {
@@ -498,111 +497,113 @@ async function resolveAudioStreamUrl(id) {
           }),
           signal: AbortSignal.timeout(4000)
         });
-
         if (response.ok) {
           const data = await response.json();
           if (data && data.url) {
-            console.log(`Cobalt successfully resolved audio stream!`);
-            cleanUrl = data.url;
-            break;
+            console.log(`Cobalt instance resolved successfully: ${apiOf}`);
+            return data.url;
           }
         }
       } catch (err) {
-        console.warn(`Cobalt resolver ${apiOf} failed:`, err.message);
+        // fail silently for Promise.any
       }
-    }
+      throw new Error(`Cobalt ${apiOf} failed`);
+    })());
   }
 
-  // Fallback to Piped API
-  if (!cleanUrl) {
-    try {
-      const pipedInstances = await getPipedInstances();
-      for (let i = 0; i < Math.min(pipedInstances.length, 3); i++) {
-        const apiOf = pipedInstances[i];
-        console.log(`Trying Piped resolver: ${apiOf}`);
-        try {
-          const response = await fetch(`${apiOf}/streams/${id}`, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            },
-            signal: AbortSignal.timeout(4000)
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            // Find first audio stream
-            if (data && data.audioStreams && data.audioStreams.length > 0) {
-              console.log(`Piped successfully resolved audio stream!`);
-              cleanUrl = data.audioStreams[0].url;
-              break;
-            }
-            // Check for muxed video stream containing audio
-            if (data && data.videoStreams) {
-              const muxed = data.videoStreams.find(v => !v.videoOnly);
-              if (muxed && muxed.url) {
-                console.log(`Piped successfully resolved muxed stream containing audio!`);
-                cleanUrl = muxed.url;
-                break;
-              }
-            }
-          }
-        } catch (err) {
-          console.warn(`Piped resolver ${apiOf} failed:`, err.message);
-        }
-      }
-    } catch (err) {
-      console.warn(`Piped check failed:`, err.message);
-    }
-  }
-
-  // Fallback to Invidious API
-  if (!cleanUrl) {
-    try {
-      const invidiousInstances = await getInvidiousInstances();
-      for (let i = 0; i < Math.min(invidiousInstances.length, 3); i++) {
-        const apiOf = invidiousInstances[i];
-        console.log(`Trying Invidious resolver: ${apiOf}`);
-        try {
-          const response = await fetch(`${apiOf}/api/v1/videos/${id}`, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  // Add Piped resolver tasks
+  const pipedInstances = [
+    'https://pipedapi.kavin.rocks',
+    'https://pipedapi.colt.top',
+    'https://piped-api.garudalinux.org',
+    'https://api-piped.mha.fi',
+    'https://pipedapi.lunar.icu',
+    'https://pipedapi.fortpyramid.com',
+    'https://pipedapi.synapse.gay',
+    'https://api.piped.yt'
+  ];
+  for (const apiOf of pipedInstances) {
+    tasks.push((async () => {
+      try {
+        const response = await fetch(`${apiOf}/streams/${id}`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
           },
           signal: AbortSignal.timeout(4000)
         });
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.audioStreams && data.audioStreams.length > 0) {
+            console.log(`Piped instance resolved successfully: ${apiOf}`);
+            return data.audioStreams[0].url;
+          }
+          if (data && data.videoStreams) {
+            const muxed = data.videoStreams.find(v => !v.videoOnly);
+            if (muxed && muxed.url) {
+              console.log(`Piped instance resolved muxed successfully: ${apiOf}`);
+              return muxed.url;
+            }
+          }
+        }
+      } catch (err) {
+        // fail silently for Promise.any
+      }
+      throw new Error(`Piped ${apiOf} failed`);
+    })());
+  }
 
+  // Add Invidious resolver tasks
+  const invidiousInstances = [
+    'https://yewtu.be',
+    'https://yt.chocolatemoo53.com',
+    'https://invidious.flokinet.to',
+    'https://inv.nadeko.net'
+  ];
+  for (const apiOf of invidiousInstances) {
+    tasks.push((async () => {
+      try {
+        const response = await fetch(`${apiOf}/api/v1/videos/${id}`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          },
+          signal: AbortSignal.timeout(4000)
+        });
         if (response.ok) {
           const data = await response.json();
           if (data && data.adaptiveFormats) {
             const audioStream = data.adaptiveFormats.find(f => f.type && f.type.startsWith('audio'));
             if (audioStream && audioStream.url) {
-              console.log(`Invidious successfully resolved audio stream!`);
-              cleanUrl = audioStream.url;
-              break;
+              console.log(`Invidious instance resolved successfully: ${apiOf}`);
+              return audioStream.url;
             }
           }
         }
       } catch (err) {
-        console.warn(`Invidious resolver ${apiOf} failed:`, err.message);
+        // fail silently for Promise.any
       }
-    }
-  } catch (err) {
-    console.warn(`Invidious check failed:`, err.message);
-  }
+      throw new Error(`Invidious ${apiOf} failed`);
+    })());
   }
 
-  if (cleanUrl) {
+  try {
+    const firstSuccessfulUrl = await Promise.any(tasks);
+    
     // Cache the resolved URL with expiration
     let expiresAt = Date.now() + 4 * 3600 * 1000; // default 4 hours
     try {
-      const urlObj = new URL(cleanUrl);
+      const urlObj = new URL(firstSuccessfulUrl);
       const expireParam = urlObj.searchParams.get('expire');
       if (expireParam) {
         expiresAt = Number(expireParam) * 1000 - 60000; // 1 min buffer
       }
     } catch (e) {}
     
-    streamCache.set(id, { url: cleanUrl, expiresAt });
-    return cleanUrl;
+    streamCache.set(id, { url: firstSuccessfulUrl, expiresAt });
+    console.log(`Successfully resolved audio stream URL in parallel!`);
+    return firstSuccessfulUrl;
+  } catch (err) {
+    console.error(`All parallel resolvers failed for video ${id}`);
+    return null;
   }
 
   return null;
