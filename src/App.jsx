@@ -38,8 +38,6 @@ const SILENT_AUDIO_URI = "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2
 
 function App() {
   const audioPlayerRef = useRef(null);
-  const prefetchedStreamRef = useRef(null);
-  const prefetchedNextIndexRef = useRef(-1);
   const isNavigationFromPopstateRef = useRef(false);
   const [audioSourceType, setAudioSourceType] = useState('youtube-iframe'); // 'youtube-iframe' | 'audio-element'
   const [isExtractingAudio, setIsExtractingAudio] = useState(false);
@@ -598,72 +596,6 @@ function App() {
     }
   }, [volume, isMuted]);
 
-  // Prefetch the next song's audio stream URL
-  useEffect(() => {
-    if (!currentSong || queue.length === 0) return;
-
-    let nextIdx = queueIndex + 1;
-    if (shuffle) {
-      if (queue.length > 1) {
-        do {
-          nextIdx = Math.floor(Math.random() * queue.length);
-        } while (nextIdx === queueIndex);
-      } else {
-        nextIdx = 0;
-      }
-    } else if (nextIdx >= queue.length) {
-      if (repeatMode === 'all') {
-        nextIdx = 0;
-      } else {
-        nextIdx = -1; // No next song
-      }
-    }
-
-    if (nextIdx === -1) {
-      prefetchedStreamRef.current = null;
-      prefetchedNextIndexRef.current = -1;
-      return;
-    }
-
-    const nextSong = queue[nextIdx];
-    if (!nextSong) return;
-
-    // Avoid duplicate fetching if already prefetched
-    if (prefetchedStreamRef.current && prefetchedStreamRef.current.id === nextSong.id) {
-      prefetchedNextIndexRef.current = nextIdx;
-      return;
-    }
-
-    const abortController = new AbortController();
-    const fetchNextStream = async () => {
-      try {
-        console.log(`Prefetching stream URL for next song: ${nextSong.title} (${nextSong.id})`);
-        const res = await fetch(`/api/stream/${nextSong.id}`, { signal: abortController.signal });
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.url) {
-            prefetchedStreamRef.current = { id: nextSong.id, url: data.url };
-            prefetchedNextIndexRef.current = nextIdx;
-            console.log(`Successfully prefetched stream URL for: ${nextSong.title}`);
-          }
-        }
-      } catch (err) {
-        if (err.name !== 'AbortError') {
-          console.warn('Failed to prefetch next song stream URL:', err.message);
-        }
-      }
-    };
-
-    const timer = setTimeout(() => {
-      fetchNextStream();
-    }, 5000);
-
-    return () => {
-      clearTimeout(timer);
-      abortController.abort();
-    };
-  }, [currentSong, queue, queueIndex, shuffle, repeatMode]);
-
   // Keep references updated to avoid stale closures in Media Session handlers
   const mediaActionsRef = useRef({});
   useEffect(() => {
@@ -992,105 +924,24 @@ function App() {
       } catch (e) {}
     }
 
-    // Check if we already have a prefetched stream URL for this song
-    if (prefetchedStreamRef.current && prefetchedStreamRef.current.id === song.id) {
-      const cachedUrl = prefetchedStreamRef.current.url;
-      console.log('Using prefetched direct audio stream:', cachedUrl);
-      setAudioSourceType('audio-element');
-      setIsExtractingAudio(false);
-      
-      if (audioPlayerRef.current) {
-        audioPlayerRef.current.src = cachedUrl;
-        audioPlayerRef.current.load();
-        try {
-          await audioPlayerRef.current.play();
-          setIsPlayingSync(true);
-        } catch (playErr) {
-          console.error('Prefetched audio play failed, falling back to YouTube:', playErr);
-          setAudioSourceType('youtube-iframe');
-          playYouTubeVideo(song.id);
-        }
-      }
-      return;
-    }
-
     setIsExtractingAudio(true);
-    setAudioSourceType('youtube-iframe'); // Default fallback
+    setAudioSourceType('audio-element');
 
-    try {
-      const res = await fetch(`/api/stream/${song.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.url) {
-          console.log('Successfully resolved direct audio stream:', data.url);
-          setAudioSourceType('audio-element');
-          setIsExtractingAudio(false);
-          
-          if (audioPlayerRef.current) {
-            audioPlayerRef.current.src = data.url;
-            audioPlayerRef.current.load();
-            try {
-              await audioPlayerRef.current.play();
-              setIsPlayingSync(true);
-            } catch (playErr) {
-              console.error('HTML5 audio play failed, falling back to YouTube:', playErr);
-              setAudioSourceType('youtube-iframe');
-              playYouTubeVideo(song.id);
-            }
-          }
-          return;
-        }
+    if (audioPlayerRef.current) {
+      // Use our backend streaming proxy URL directly, supporting HTTP Range requests natively
+      audioPlayerRef.current.src = `/api/stream/play/${song.id}`;
+      audioPlayerRef.current.load();
+      try {
+        await audioPlayerRef.current.play();
+        setIsPlayingSync(true);
+        setIsExtractingAudio(false);
+      } catch (playErr) {
+        console.error('HTML5 audio play failed, falling back to YouTube:', playErr);
+        setIsExtractingAudio(false);
+        setAudioSourceType('youtube-iframe');
+        playYouTubeVideo(song.id);
       }
-    } catch (err) {
-      console.warn('Failed to resolve stream URL, trying client-side Cobalt resolver:', err);
     }
-
-    // Try direct client-side Cobalt extraction as fallback
-    try {
-      console.log('Trying client-side direct Cobalt resolver...');
-      const response = await fetch('https://api.cobalt.tools/api/json', {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          url: `https://www.youtube.com/watch?v=${song.id}`,
-          isAudioOnly: true
-        }),
-        signal: AbortSignal.timeout(4000)
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data && data.url) {
-          console.log('Client-side Cobalt successfully resolved audio stream:', data.url);
-          setAudioSourceType('audio-element');
-          setIsExtractingAudio(false);
-          
-          if (audioPlayerRef.current) {
-            audioPlayerRef.current.src = data.url;
-            audioPlayerRef.current.load();
-            try {
-              await audioPlayerRef.current.play();
-              setIsPlayingSync(true);
-            } catch (playErr) {
-              console.error('Client-side resolved audio play failed, falling back to YouTube:', playErr);
-              setAudioSourceType('youtube-iframe');
-              playYouTubeVideo(song.id);
-            }
-          }
-          return;
-        }
-      }
-    } catch (directErr) {
-      console.warn('Direct client-side Cobalt resolver failed, falling back to YouTube:', directErr.message);
-    }
-
-    // Fallback on error or empty response
-    setIsExtractingAudio(false);
-    setAudioSourceType('youtube-iframe');
-    playYouTubeVideo(song.id);
   };
 
   const playYouTubeVideo = (videoId) => {
@@ -1201,26 +1052,17 @@ function App() {
 
   const playNextSong = () => {
     if (queue.length === 0) return;
-    let nextIdx = -1;
-
-    // Use prefetched index if available and valid
-    if (prefetchedNextIndexRef.current !== -1 && prefetchedNextIndexRef.current < queue.length) {
-      nextIdx = prefetchedNextIndexRef.current;
-    } else {
-      nextIdx = queueIndex + 1;
-      if (shuffle) {
-        nextIdx = Math.floor(Math.random() * queue.length);
-      } else if (nextIdx >= queue.length) {
-        if (repeatMode === 'all') {
-          nextIdx = 0;
-        } else {
-          return; // reached end of playlist
-        }
+    let nextIdx = queueIndex + 1;
+    
+    if (shuffle) {
+      nextIdx = Math.floor(Math.random() * queue.length);
+    } else if (nextIdx >= queue.length) {
+      if (repeatMode === 'all') {
+        nextIdx = 0;
+      } else {
+        return; // reached end of playlist
       }
     }
-    
-    // Clear prefetched index as we are consuming it
-    prefetchedNextIndexRef.current = -1;
     
     setQueueIndex(nextIdx);
     playSong(queue[nextIdx], queue);

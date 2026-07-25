@@ -437,15 +437,8 @@ app.get('/api/suggest', async (req, res) => {
   }
 });
 
-// Audio stream proxy/redirect resolver endpoint
-app.get('/api/stream/:id', async (req, res) => {
-  const { id } = req.params;
-  if (!id) {
-    return res.status(400).json({ error: 'Video ID is required' });
-  }
-
-  console.log(`Resolving stream URL for video: ${id}`);
-
+// Reusable helper to resolve YouTube audio stream URL using ytdl-core and fallbacks
+async function resolveAudioStreamUrl(id) {
   // Try ytdl-core first (local server resolver, fast and stable if not IP-blocked)
   try {
     console.log(`Trying ytdl-core resolver for: ${id}`);
@@ -453,13 +446,13 @@ app.get('/api/stream/:id', async (req, res) => {
     const format = ytdl.chooseFormat(info.formats, { filter: 'audioonly', quality: 'highestaudio' });
     if (format && format.url) {
       console.log(`ytdl-core successfully resolved audio stream!`);
-      return res.json({ url: format.url });
+      return format.url;
     }
   } catch (err) {
     console.warn(`ytdl-core resolver failed for ${id}:`, err.message);
   }
   
-  // Try Cobalt instances first
+  // Try Cobalt instances fallback
   const cobaltInstances = [
     'https://api.cobalt.tools/api/json',
     'https://co.wuk.sh/api/json',
@@ -488,8 +481,8 @@ app.get('/api/stream/:id', async (req, res) => {
       if (response.ok) {
         const data = await response.json();
         if (data && data.url) {
-          console.log(`Cobalt successfully resolved audio stream! URL: ${data.url.substring(0, 60)}...`);
-          return res.json({ url: data.url });
+          console.log(`Cobalt successfully resolved audio stream!`);
+          return data.url;
         }
       }
     } catch (err) {
@@ -516,14 +509,14 @@ app.get('/api/stream/:id', async (req, res) => {
           // Find first audio stream
           if (data && data.audioStreams && data.audioStreams.length > 0) {
             console.log(`Piped successfully resolved audio stream!`);
-            return res.json({ url: data.audioStreams[0].url });
+            return data.audioStreams[0].url;
           }
           // Check for muxed video stream containing audio
           if (data && data.videoStreams) {
             const muxed = data.videoStreams.find(v => !v.videoOnly);
             if (muxed && muxed.url) {
               console.log(`Piped successfully resolved muxed stream containing audio!`);
-              return res.json({ url: muxed.url });
+              return muxed.url;
             }
           }
         }
@@ -555,7 +548,7 @@ app.get('/api/stream/:id', async (req, res) => {
             const audioStream = data.adaptiveFormats.find(f => f.type && f.type.startsWith('audio'));
             if (audioStream && audioStream.url) {
               console.log(`Invidious successfully resolved audio stream!`);
-              return res.json({ url: audioStream.url });
+              return audioStream.url;
             }
           }
         }
@@ -567,7 +560,83 @@ app.get('/api/stream/:id', async (req, res) => {
     console.warn(`Invidious check failed:`, err.message);
   }
 
+  return null;
+}
+
+// Audio stream proxy/redirect resolver JSON endpoint
+app.get('/api/stream/:id', async (req, res) => {
+  const { id } = req.params;
+  if (!id) {
+    return res.status(400).json({ error: 'Video ID is required' });
+  }
+
+  console.log(`Resolving stream URL for video: ${id}`);
+  const audioUrl = await resolveAudioStreamUrl(id);
+  if (audioUrl) {
+    return res.json({ url: audioUrl });
+  }
+  
   res.status(404).json({ error: 'Could not resolve playable audio stream for this video' });
+});
+
+// Audio streaming range proxy endpoint
+app.get('/api/stream/play/:id', async (req, res) => {
+  const { id } = req.params;
+  if (!id) {
+    return res.status(400).json({ error: 'Video ID is required' });
+  }
+
+  console.log(`Proxying audio stream for video: ${id}`);
+  const audioUrl = await resolveAudioStreamUrl(id);
+  if (!audioUrl) {
+    return res.status(404).json({ error: 'Could not resolve playable audio stream' });
+  }
+
+  try {
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    };
+    if (req.headers.range) {
+      headers['Range'] = req.headers.range;
+    }
+
+    const ytResponse = await fetch(audioUrl, { headers });
+
+    // Forward status code (e.g. 206 for Partial Content, or 200 OK)
+    res.status(ytResponse.status);
+
+    // Forward key streaming headers
+    const headersToForward = [
+      'content-type',
+      'content-length',
+      'content-range',
+      'accept-ranges',
+      'cache-control'
+    ];
+    for (const name of headersToForward) {
+      const value = ytResponse.headers.get(name);
+      if (value) {
+        res.setHeader(name, value);
+      }
+    }
+
+    // Ensure accept-ranges is set so seeking works in mobile Safari/Chrome
+    if (!res.getHeader('accept-ranges')) {
+      res.setHeader('accept-ranges', 'bytes');
+    }
+
+    // Stream the body chunks
+    const body = ytResponse.body;
+    if (body) {
+      const { Readable } = await import('stream');
+      Readable.fromWeb(body).pipe(res);
+    } else {
+      res.end();
+    }
+  } catch (err) {
+    console.error(`Stream proxy failed for ${id}:`, err.message);
+    res.status(500).json({ error: 'Failed to proxy audio stream' });
+  }
 });
 
 // Helper to get Spotify Access Token via Client Credentials flow
