@@ -137,12 +137,7 @@ function Player({
                 }}>
                   {currentSong.channelName}
                 </span>
-                {isExtractingAudio && (
-                  <span style={{ fontSize: '10px', color: 'var(--vibe-accent)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                    <span className="pulse-dot" style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--vibe-accent)', display: 'inline-block' }}></span>
-                    Optimizing Stream
-                  </span>
-                )}
+
                 {!isExtractingAudio && audioSourceType === 'audio-element' && (
                   <span style={{ 
                     fontSize: '9px', 

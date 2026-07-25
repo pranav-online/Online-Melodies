@@ -40,7 +40,6 @@ function App() {
   const audioPlayerRef = useRef(null);
   const isNavigationFromPopstateRef = useRef(false);
   const [audioSourceType, setAudioSourceType] = useState('youtube-iframe'); // 'youtube-iframe' | 'audio-element'
-  const [isExtractingAudio, setIsExtractingAudio] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
 
   // Authentication states
@@ -531,7 +530,7 @@ function App() {
   // Poll current time while playing
   useEffect(() => {
     let interval;
-    if (isPlaying && ytPlayer) {
+    if (isPlaying && audioSourceType === 'youtube-iframe' && ytPlayer) {
       interval = setInterval(() => {
         try {
           const time = ytPlayer.getCurrentTime();
@@ -542,7 +541,7 @@ function App() {
       }, 500);
     }
     return () => clearInterval(interval);
-  }, [isPlaying, ytPlayer]);
+  }, [isPlaying, ytPlayer, audioSourceType]);
 
   // Sleep Timer countdown loop
   useEffect(() => {
@@ -595,6 +594,44 @@ function App() {
       audioPlayerRef.current.muted = isMuted;
     }
   }, [volume, isMuted]);
+
+  // Background prefetch next song stream URL on the server cache
+  useEffect(() => {
+    if (!currentSong || queue.length === 0) return;
+
+    let nextIdx = queueIndex + 1;
+    if (shuffle) {
+      if (queue.length > 1) {
+        do {
+          nextIdx = Math.floor(Math.random() * queue.length);
+        } while (nextIdx === queueIndex);
+      } else {
+        nextIdx = 0;
+      }
+    } else if (nextIdx >= queue.length) {
+      if (repeatMode === 'all') {
+        nextIdx = 0;
+      } else {
+        nextIdx = -1;
+      }
+    }
+
+    if (nextIdx === -1) return;
+    const nextSong = queue[nextIdx];
+    if (!nextSong) return;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      console.log(`Background pre-caching stream for next song: ${nextSong.title}`);
+      fetch(`/api/stream/${nextSong.id}`, { signal: controller.signal })
+        .catch(() => {});
+    }, 4000);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [currentSong, queue, queueIndex, shuffle, repeatMode]);
 
   // Keep references updated to avoid stale closures in Media Session handlers
   const mediaActionsRef = useRef({});
@@ -924,7 +961,6 @@ function App() {
       } catch (e) {}
     }
 
-    setIsExtractingAudio(true);
     setAudioSourceType('audio-element');
 
     if (audioPlayerRef.current) {
@@ -934,10 +970,8 @@ function App() {
       try {
         await audioPlayerRef.current.play();
         setIsPlayingSync(true);
-        setIsExtractingAudio(false);
       } catch (playErr) {
         console.error('HTML5 audio play failed, falling back to YouTube:', playErr);
-        setIsExtractingAudio(false);
         setAudioSourceType('youtube-iframe');
         playYouTubeVideo(song.id);
       }
@@ -1373,7 +1407,7 @@ function App() {
         addSongToPlaylist={addSongToPlaylist}
         sleepTimer={sleepTimer}
         setSleepTimer={setSleepTimer}
-        isExtractingAudio={isExtractingAudio}
+        isExtractingAudio={false}
         audioSourceType={audioSourceType}
       />
 
