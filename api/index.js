@@ -450,9 +450,15 @@ async function resolveAudioStreamUrl(id) {
 
   let cleanUrl = null;
 
-  // Try youtube-dl-exec first (natively runs yt-dlp, extremely stable and immune to signature changes)
-  try {
-    console.log(`Trying youtube-dl-exec (yt-dlp) resolver for: ${id}`);
+  // On Vercel serverless environments, skip local yt-dlp execution
+  // because it requires binary execution rights and local disk caching, and
+  // the resulting googlevideo.com links cannot be proxied due to serverless timeouts.
+  const isVercel = process.env.VERCEL === '1';
+
+  if (!isVercel) {
+    // Try youtube-dl-exec first (natively runs yt-dlp, extremely stable and immune to signature changes)
+    try {
+      console.log(`Trying youtube-dl-exec (yt-dlp) resolver for: ${id}`);
     const videoUrl = `https://www.youtube.com/watch?v=${id}`;
     const audioUrl = await youtubedl(videoUrl, {
       getUrl: true,
@@ -625,12 +631,19 @@ app.get('/api/stream/play/:id', async (req, res) => {
     return res.status(400).json({ error: 'Video ID is required' });
   }
 
-  console.log(`Proxying audio stream for video: ${id}`);
   const audioUrl = await resolveAudioStreamUrl(id);
   if (!audioUrl) {
     return res.status(404).json({ error: 'Could not resolve playable audio stream' });
   }
 
+  // If the resolved URL is a public proxy (not YouTube's googlevideo), redirect directly.
+  // This saves bandwidth, CPU, and works flawlessly on serverless environments like Vercel.
+  if (!audioUrl.includes('googlevideo.com')) {
+    console.log(`Redirecting client directly to public proxy URL: ${audioUrl.substring(0, 80)}...`);
+    return res.redirect(302, audioUrl);
+  }
+
+  console.log(`Proxying googlevideo stream for video: ${id}`);
   try {
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
