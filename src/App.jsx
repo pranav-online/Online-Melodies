@@ -38,6 +38,9 @@ const SILENT_AUDIO_URI = "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2
 
 function App() {
   const audioPlayerRef = useRef(null);
+  const prefetchedStreamRef = useRef(null);
+  const prefetchedNextIndexRef = useRef(-1);
+  const isNavigationFromPopstateRef = useRef(false);
   const [audioSourceType, setAudioSourceType] = useState('youtube-iframe'); // 'youtube-iframe' | 'audio-element'
   const [isExtractingAudio, setIsExtractingAudio] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
@@ -595,6 +598,72 @@ function App() {
     }
   }, [volume, isMuted]);
 
+  // Prefetch the next song's audio stream URL
+  useEffect(() => {
+    if (!currentSong || queue.length === 0) return;
+
+    let nextIdx = queueIndex + 1;
+    if (shuffle) {
+      if (queue.length > 1) {
+        do {
+          nextIdx = Math.floor(Math.random() * queue.length);
+        } while (nextIdx === queueIndex);
+      } else {
+        nextIdx = 0;
+      }
+    } else if (nextIdx >= queue.length) {
+      if (repeatMode === 'all') {
+        nextIdx = 0;
+      } else {
+        nextIdx = -1; // No next song
+      }
+    }
+
+    if (nextIdx === -1) {
+      prefetchedStreamRef.current = null;
+      prefetchedNextIndexRef.current = -1;
+      return;
+    }
+
+    const nextSong = queue[nextIdx];
+    if (!nextSong) return;
+
+    // Avoid duplicate fetching if already prefetched
+    if (prefetchedStreamRef.current && prefetchedStreamRef.current.id === nextSong.id) {
+      prefetchedNextIndexRef.current = nextIdx;
+      return;
+    }
+
+    const abortController = new AbortController();
+    const fetchNextStream = async () => {
+      try {
+        console.log(`Prefetching stream URL for next song: ${nextSong.title} (${nextSong.id})`);
+        const res = await fetch(`/api/stream/${nextSong.id}`, { signal: abortController.signal });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.url) {
+            prefetchedStreamRef.current = { id: nextSong.id, url: data.url };
+            prefetchedNextIndexRef.current = nextIdx;
+            console.log(`Successfully prefetched stream URL for: ${nextSong.title}`);
+          }
+        }
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.warn('Failed to prefetch next song stream URL:', err.message);
+        }
+      }
+    };
+
+    const timer = setTimeout(() => {
+      fetchNextStream();
+    }, 5000);
+
+    return () => {
+      clearTimeout(timer);
+      abortController.abort();
+    };
+  }, [currentSong, queue, queueIndex, shuffle, repeatMode]);
+
   // Keep references updated to avoid stale closures in Media Session handlers
   const mediaActionsRef = useRef({});
   useEffect(() => {
@@ -791,31 +860,62 @@ function App() {
     };
   }, [isPlaying, ytPlayer, audioSourceType]);
 
+  // Sync state changes with history
   useEffect(() => {
-    const ensureAppHistoryState = () => {
-      if (!window.history.state || !window.history.state.onlineMelodiesApp) {
-        window.history.replaceState({ onlineMelodiesApp: true }, '');
-        window.history.pushState({ onlineMelodiesApp: true }, '');
-      }
+    if (isNavigationFromPopstateRef.current) {
+      isNavigationFromPopstateRef.current = false;
+      return;
+    }
+
+    const state = {
+      onlineMelodiesApp: true,
+      tab: currentTab,
+      activePlaylistId: activePlaylistId,
+      sidebarOpen: sidebarOpen
     };
 
+    // If it's the initial default state, replaceState. Otherwise pushState.
+    if (currentTab === 'home' && activePlaylistId === null && !sidebarOpen) {
+      window.history.replaceState(state, '');
+    } else {
+      if (!window.history.state || 
+          window.history.state.tab !== currentTab || 
+          window.history.state.activePlaylistId !== activePlaylistId || 
+          window.history.state.sidebarOpen !== sidebarOpen) {
+        window.history.pushState(state, '');
+      }
+    }
+  }, [currentTab, activePlaylistId, sidebarOpen]);
+
+  // Handle history back/forward (popstate)
+  useEffect(() => {
     const handlePopState = (event) => {
-      if (isPlaying && event.state && event.state.onlineMelodiesApp) {
-        window.history.pushState({ onlineMelodiesApp: true }, '');
-        
-        if (audioSourceType === 'audio-element') {
-          if (audioPlayerRef.current) {
-            audioPlayerRef.current.play().catch(() => {});
-          }
-        } else {
-          if (audioPlayerRef.current) {
-            audioPlayerRef.current.play().catch(() => {});
-          }
-          if (ytPlayer && playerReadyRef.current) {
-            try {
-              ytPlayer.playVideo();
-            } catch (err) {
-              console.warn('Failed to resume YT playback on popstate:', err);
+      if (event.state && event.state.onlineMelodiesApp) {
+        isNavigationFromPopstateRef.current = true;
+
+        // Restore tab/view state
+        if (event.state.tab) {
+          setCurrentTab(event.state.tab);
+        }
+        setActivePlaylistId(event.state.activePlaylistId || null);
+        setSidebarOpen(!!event.state.sidebarOpen);
+
+        // Keep audio playing in case browser tried to interrupt on history navigation
+        if (isPlaying) {
+          if (audioSourceType === 'audio-element') {
+            if (audioPlayerRef.current) {
+              audioPlayerRef.current.play().catch(() => {});
+            }
+          } else {
+            if (audioPlayerRef.current) {
+              audioPlayerRef.current.play().catch(() => {});
+            }
+            if (ytPlayer && playerReadyRef.current) {
+              try {
+                ytPlayer.playVideo();
+              } catch (err) {
+                console.warn('Failed to resume YT playback on popstate:', err);
+              }
             }
           }
         }
@@ -828,7 +928,16 @@ function App() {
       event.returnValue = '';
     };
 
-    ensureAppHistoryState();
+    // Initialize initial state if not set
+    if (!window.history.state || !window.history.state.onlineMelodiesApp) {
+      window.history.replaceState({
+        onlineMelodiesApp: true,
+        tab: currentTab,
+        activePlaylistId: activePlaylistId,
+        sidebarOpen: sidebarOpen
+      }, '');
+    }
+
     window.addEventListener('popstate', handlePopState);
     window.addEventListener('beforeunload', handleBeforeUnload);
 
@@ -836,7 +945,7 @@ function App() {
       window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [isPlaying, ytPlayer, audioSourceType]);
+  }, [isPlaying, ytPlayer, audioSourceType, currentTab, activePlaylistId, sidebarOpen]);
 
   const playSong = async (song, upcomingQueue = null) => {
     if (!song) return;
@@ -881,6 +990,28 @@ function App() {
       try {
         ytPlayer.pauseVideo();
       } catch (e) {}
+    }
+
+    // Check if we already have a prefetched stream URL for this song
+    if (prefetchedStreamRef.current && prefetchedStreamRef.current.id === song.id) {
+      const cachedUrl = prefetchedStreamRef.current.url;
+      console.log('Using prefetched direct audio stream:', cachedUrl);
+      setAudioSourceType('audio-element');
+      setIsExtractingAudio(false);
+      
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.src = cachedUrl;
+        audioPlayerRef.current.load();
+        try {
+          await audioPlayerRef.current.play();
+          setIsPlayingSync(true);
+        } catch (playErr) {
+          console.error('Prefetched audio play failed, falling back to YouTube:', playErr);
+          setAudioSourceType('youtube-iframe');
+          playYouTubeVideo(song.id);
+        }
+      }
+      return;
     }
 
     setIsExtractingAudio(true);
@@ -1070,17 +1201,26 @@ function App() {
 
   const playNextSong = () => {
     if (queue.length === 0) return;
-    let nextIdx = queueIndex + 1;
-    
-    if (shuffle) {
-      nextIdx = Math.floor(Math.random() * queue.length);
-    } else if (nextIdx >= queue.length) {
-      if (repeatMode === 'all') {
-        nextIdx = 0;
-      } else {
-        return; // reached end of playlist
+    let nextIdx = -1;
+
+    // Use prefetched index if available and valid
+    if (prefetchedNextIndexRef.current !== -1 && prefetchedNextIndexRef.current < queue.length) {
+      nextIdx = prefetchedNextIndexRef.current;
+    } else {
+      nextIdx = queueIndex + 1;
+      if (shuffle) {
+        nextIdx = Math.floor(Math.random() * queue.length);
+      } else if (nextIdx >= queue.length) {
+        if (repeatMode === 'all') {
+          nextIdx = 0;
+        } else {
+          return; // reached end of playlist
+        }
       }
     }
+    
+    // Clear prefetched index as we are consuming it
+    prefetchedNextIndexRef.current = -1;
     
     setQueueIndex(nextIdx);
     playSong(queue[nextIdx], queue);
@@ -1405,7 +1545,17 @@ function App() {
         loop={audioSourceType === 'youtube-iframe'} 
         playsInline 
         preload="auto"
-        style={{ display: 'none' }} 
+        style={{
+          position: 'fixed',
+          bottom: '-9999px',
+          left: '-9999px',
+          width: '1px',
+          height: '1px',
+          opacity: 0.01,
+          pointerEvents: 'none'
+        }} 
+        onPlay={() => setIsPlayingSync(true)}
+        onPause={() => setIsPlayingSync(false)}
         onTimeUpdate={() => {
           if (audioSourceType === 'audio-element' && audioPlayerRef.current) {
             setCurrentTime(audioPlayerRef.current.currentTime);

@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import ytdl from '@distube/ytdl-core';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -444,6 +445,19 @@ app.get('/api/stream/:id', async (req, res) => {
   }
 
   console.log(`Resolving stream URL for video: ${id}`);
+
+  // Try ytdl-core first (local server resolver, fast and stable if not IP-blocked)
+  try {
+    console.log(`Trying ytdl-core resolver for: ${id}`);
+    const info = await ytdl.getInfo(id);
+    const format = ytdl.chooseFormat(info.formats, { filter: 'audioonly', quality: 'highestaudio' });
+    if (format && format.url) {
+      console.log(`ytdl-core successfully resolved audio stream!`);
+      return res.json({ url: format.url });
+    }
+  } catch (err) {
+    console.warn(`ytdl-core resolver failed for ${id}:`, err.message);
+  }
   
   // Try Cobalt instances first
   const cobaltInstances = [
